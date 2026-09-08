@@ -216,8 +216,12 @@ uv run python tools/capture_demo.py
 Tests cover config precedence and safe editing, metadata-only persistence,
 account deduplication, stale/failed checks, expiry boundaries, token association,
 CLI errors, notification deduplication, scheduler files, and terminal interaction.
-CI is configured for Linux and macOS with Python 3.11 and 3.13. All test data is synthetic;
-tests do not read local credentials or connect to Snowflake.
+All test data is synthetic; tests do not read local credentials or connect to Snowflake.
+
+The [GitHub Actions template](docs/github-actions-ci.yml) checks Linux and macOS
+with Python 3.11 and 3.13. To enable it, copy it to `.github/workflows/ci.yml`
+and push using GitHub authorization with the `workflow` permission. It is kept
+as a template because the current publishing credentials do not have that permission.
 
 Initial validation used Snowflake CLI 3.17.1 for command/config compatibility.
 Live Snowflake authentication and a real Omarchy desktop remain to be validated.
