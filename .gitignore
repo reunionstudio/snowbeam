@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+*.egg-info/
+dist/
+.DS_Store
+*.sqlite3
+*.sqlite3-*
+*.snowdock.bak
+.env
+.env.*
+config.toml
+connections.toml
+*.pem
+*.p8
