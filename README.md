@@ -15,7 +15,8 @@ Independent of Airlock. Open source. MIT licensed.
 Requires Python 3.11 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```sh
-cd /path/to/snowbeam
+git clone https://github.com/reunionstudio/snowbeam.git
+cd snowbeam
 uv sync --frozen
 uv run snowbeam --demo
 ```
@@ -31,7 +32,7 @@ uv tool install snowflake-cli
 snowbeam
 ```
 
-Snowbeam is currently a local repository; it has not been published to GitHub or PyPI.
+The GitHub repository is private. Snowbeam has not been released on PyPI.
 Snowflake CLI must be available as `snow` for live refreshes. Offline inventory
 and the demo work without it. You can select another executable with
 `--snow-executable /absolute/path/to/snow`.
