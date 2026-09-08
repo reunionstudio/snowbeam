@@ -1,12 +1,12 @@
 from textual.widgets import Button, DataTable, Input, Select, Static, TabbedContent
 
-from snowdock.demo import demo_service
-from snowdock.tui import ConfirmRemove, ConnectionForm, Snowdock, TokenBinding
+from snowbeam.demo import demo_service
+from snowbeam.tui import ConfirmRemove, ConnectionForm, Snowbeam, TokenBinding
 
 
 async def test_inventory_and_token_tabs_render_and_filter(tmp_path):
     service = demo_service(tmp_path)
-    app = Snowdock(service, auto_refresh=False)
+    app = Snowbeam(service, auto_refresh=False)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
         assert app.query_one("#connections", DataTable).row_count == 2
@@ -30,12 +30,12 @@ async def test_inventory_and_token_tabs_render_and_filter(tmp_path):
         await pilot.pause()
         assert "Configuration:" in str(app.query_one("#details", Static).render())
         assert not app.query_one("#edit", Button).disabled
-        app.save_screenshot("snowdock-demo.svg", path=str(tmp_path))
+        app.save_screenshot("snowbeam-demo.svg", path=str(tmp_path))
 
 
 async def test_add_edit_and_remove_through_actual_forms(tmp_path):
     service = demo_service(tmp_path)
-    app = Snowdock(service, auto_refresh=False)
+    app = Snowbeam(service, auto_refresh=False)
     async with app.run_test(size=(100, 42)) as pilot:
         await pilot.press("a")
         await pilot.pause()
@@ -63,7 +63,7 @@ async def test_add_edit_and_remove_through_actual_forms(tmp_path):
 
 async def test_selected_refresh_is_nonblocking_and_binding_is_explicit(tmp_path):
     service = demo_service(tmp_path)
-    app = Snowdock(service, auto_refresh=False)
+    app = Snowbeam(service, auto_refresh=False)
     async with app.run_test(size=(120, 36)) as pilot:
         await pilot.pause()
         app.selected_connection = service.config.profile("development").key
@@ -83,7 +83,7 @@ async def test_selected_refresh_is_nonblocking_and_binding_is_explicit(tmp_path)
 
 async def test_empty_app_is_usable_at_small_terminal_size(service):
     service.config.remove("work")
-    app = Snowdock(service, auto_refresh=False)
+    app = Snowbeam(service, auto_refresh=False)
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
         assert app.query_one("#connections", DataTable).row_count == 0

@@ -1,4 +1,4 @@
-# Snowdock
+# Snowbeam
 
 Keep this a small, local Snowflake connection and token inventory tool.
 

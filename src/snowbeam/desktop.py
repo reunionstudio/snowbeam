@@ -32,7 +32,7 @@ def send_notification(title: str, body: str) -> bool:
             body,
         ]
     elif shutil.which("notify-send"):
-        command = ["notify-send", "--app-name=Snowdock", "--", title, body]
+        command = ["notify-send", "--app-name=Snowbeam", "--", title, body]
     else:
         return False
     try:
@@ -58,7 +58,7 @@ def notify_due(store: Store, alerts: list[dict], coverage: list[str]) -> tuple[i
             body += " Connections: " + ", ".join(alert["connections"])
         if alert["stale"]:
             body += " Based on cached metadata; refresh to verify."
-        if send_notification("Snowdock · token needs attention", body):
+        if send_notification("Snowbeam · token needs attention", body):
             store.mark_notice(key)
             sent += 1
         else:
@@ -68,8 +68,8 @@ def notify_due(store: Store, alerts: list[dict], coverage: list[str]) -> tuple[i
         key = f"coverage:{utcnow().date()}:{digest}"
         if not store.notice_sent(key):
             if send_notification(
-                "Snowdock · inventory needs attention",
-                "Some connections or token inventories are unverified. Open Snowdock to review.",
+                "Snowbeam · inventory needs attention",
+                "Some connections or token inventories are unverified. Open Snowbeam to review.",
             ):
                 store.mark_notice(key)
                 sent += 1
@@ -82,7 +82,7 @@ def program_args(service: Service) -> list[str]:
     result = [
         sys.executable,
         "-m",
-        "snowdock",
+        "snowbeam",
         "--state-dir",
         str(service.store.directory.absolute()),
         "--snow-config",
@@ -111,13 +111,13 @@ def quoted_exec(args: list[str], *, systemd: bool = False) -> str:
 def install_launcher(service: Service) -> Path:
     if sys.platform != "linux":
         raise ValueError(
-            "The desktop launcher is for Linux. On macOS, run snowdock in your terminal."
+            "The desktop launcher is for Linux. On macOS, run snowbeam in your terminal."
         )
     directory = user_data_path(appauthor=False) / "applications"
-    path = directory / "snowdock.desktop"
+    path = directory / "snowbeam.desktop"
     atomic_write(
         path,
-        "[Desktop Entry]\nType=Application\nName=Snowdock\n"
+        "[Desktop Entry]\nType=Application\nName=Snowbeam\n"
         "Comment=Snowflake accounts, connections, and token expirations\n"
         f"Exec={quoted_exec(program_args(service))}\nTerminal=true\n"
         "Icon=network-server\nCategories=Development;Utility;\nKeywords=Snowflake;PAT;Connections;\n",
@@ -131,28 +131,28 @@ def install_reminders(service: Service) -> list[Path]:
         directory = (
             Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "systemd/user"
         )
-        service_path = directory / "snowdock-reminders.service"
-        timer_path = directory / "snowdock-reminders.timer"
+        service_path = directory / "snowbeam-reminders.service"
+        timer_path = directory / "snowbeam-reminders.timer"
         atomic_write(
             service_path,
-            "[Unit]\nDescription=Check Snowdock token expirations\n\n"
+            "[Unit]\nDescription=Check Snowbeam token expirations\n\n"
             "[Service]\nType=oneshot\n"
             f"ExecStart={quoted_exec(args, systemd=True)}\n"
             "SuccessExitStatus=1\nTimeoutStartSec=10min\n",
         )
         atomic_write(
             timer_path,
-            "[Unit]\nDescription=Daily Snowdock expiration reminders\n\n"
+            "[Unit]\nDescription=Daily Snowbeam expiration reminders\n\n"
             "[Timer]\nOnCalendar=*-*-* 09:00:00\nPersistent=true\n"
             "RandomizedDelaySec=60\n\n[Install]\nWantedBy=timers.target\n",
         )
         _run(["systemctl", "--user", "daemon-reload"])
-        _run(["systemctl", "--user", "enable", "--now", "snowdock-reminders.timer"])
+        _run(["systemctl", "--user", "enable", "--now", "snowbeam-reminders.timer"])
         return [service_path, timer_path]
     if sys.platform == "darwin":
-        path = Path.home() / "Library/LaunchAgents/io.reunionstudio.snowdock.plist"
+        path = Path.home() / "Library/LaunchAgents/io.reunionstudio.snowbeam.plist"
         payload = {
-            "Label": "io.reunionstudio.snowdock",
+            "Label": "io.reunionstudio.snowbeam",
             "ProgramArguments": args,
             "StartInterval": 3600,
             "RunAtLoad": True,
@@ -161,7 +161,7 @@ def install_reminders(service: Service) -> list[Path]:
         atomic_write(path, plistlib.dumps(payload).decode())
         domain = f"gui/{os.getuid()}"
         subprocess.run(
-            ["launchctl", "bootout", domain + "/io.reunionstudio.snowdock"],
+            ["launchctl", "bootout", domain + "/io.reunionstudio.snowbeam"],
             capture_output=True,
             check=False,
             timeout=15,
@@ -173,21 +173,21 @@ def install_reminders(service: Service) -> list[Path]:
 
 def remove_reminders() -> None:
     if sys.platform == "linux":
-        _run(["systemctl", "--user", "disable", "--now", "snowdock-reminders.timer"])
+        _run(["systemctl", "--user", "disable", "--now", "snowbeam-reminders.timer"])
         directory = (
             Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "systemd/user"
         )
-        for name in ("snowdock-reminders.service", "snowdock-reminders.timer"):
+        for name in ("snowbeam-reminders.service", "snowbeam-reminders.timer"):
             (directory / name).unlink(missing_ok=True)
         _run(["systemctl", "--user", "daemon-reload"])
     elif sys.platform == "darwin":
         subprocess.run(
-            ["launchctl", "bootout", f"gui/{os.getuid()}/io.reunionstudio.snowdock"],
+            ["launchctl", "bootout", f"gui/{os.getuid()}/io.reunionstudio.snowbeam"],
             capture_output=True,
             check=False,
             timeout=15,
         )
-        (Path.home() / "Library/LaunchAgents/io.reunionstudio.snowdock.plist").unlink(
+        (Path.home() / "Library/LaunchAgents/io.reunionstudio.snowbeam.plist").unlink(
             missing_ok=True
         )
     else:

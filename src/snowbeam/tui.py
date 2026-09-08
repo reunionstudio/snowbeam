@@ -182,9 +182,9 @@ class TokenBinding(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class Snowdock(App):
-    TITLE = "Snowdock"
-    SUB_TITLE = "Snowflake connections, in order"
+class Snowbeam(App):
+    TITLE = "Snowbeam"
+    SUB_TITLE = "Your way into Snowflake"
     CSS = """
     Screen { background: #0b1420; color: #dceaf5; }
     Header { background: #13263a; }

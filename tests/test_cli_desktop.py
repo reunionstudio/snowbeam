@@ -6,9 +6,9 @@ from datetime import timedelta
 
 from conftest import IDENTITY, TOKEN
 
-from snowdock.cli import main
-from snowdock.desktop import install_launcher, install_reminders, notify_due, quoted_exec
-from snowdock.store import iso, utcnow
+from snowbeam.cli import main
+from snowbeam.desktop import install_launcher, install_reminders, notify_due, quoted_exec
+from snowbeam.store import iso, utcnow
 
 
 def test_demo_is_isolated_and_exits_with_alert_status(tmp_path, monkeypatch, capsys):
@@ -52,12 +52,12 @@ def test_notification_deduplication_and_failed_delivery(service, monkeypatch):
         account, "ALICE", [dict(TOKEN, expires_at=iso(utcnow() + timedelta(days=2)))]
     )
     alerts = service.store.alerts()
-    monkeypatch.setattr("snowdock.desktop.send_notification", lambda *args: False)
+    monkeypatch.setattr("snowbeam.desktop.send_notification", lambda *args: False)
     assert notify_due(service.store, alerts, []) == (0, 1)
     assert not service.store.notice_sent(alerts[0]["notice_key"])
     sent = []
     monkeypatch.setattr(
-        "snowdock.desktop.send_notification", lambda *args: sent.append(args) or True
+        "snowbeam.desktop.send_notification", lambda *args: sent.append(args) or True
     )
     assert notify_due(service.store, alerts, []) == (1, 0)
     assert notify_due(service.store, alerts, []) == (0, 0)
@@ -82,7 +82,7 @@ def test_scheduler_files_are_opt_in_and_paths_are_quoted(service, monkeypatch, t
     paths = install_reminders(service)
     assert '"check" "--refresh" "--notify"' in paths[0].read_text()
     assert "Persistent=true" in paths[1].read_text()
-    assert calls[-1] == ["systemctl", "--user", "enable", "--now", "snowdock-reminders.timer"]
+    assert calls[-1] == ["systemctl", "--user", "enable", "--now", "snowbeam-reminders.timer"]
     assert quoted_exec(["a b", 'cash$%"'], systemd=True) == '"a b" "cash$$%%\\""'
 
 

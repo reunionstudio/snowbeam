@@ -1,4 +1,4 @@
-"""Read Snowflake's existing configuration; edit only fields Snowdock owns."""
+"""Read Snowflake's existing configuration; edit only fields Snowbeam owns."""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ class Config:
     @contextmanager
     def _edit(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        lock_path = path.with_name(f".{path.name}.snowdock.lock")
+        lock_path = path.with_name(f".{path.name}.snowbeam.lock")
         if lock_path.is_symlink():
             raise ConfigError(f"Refusing to use symlink {lock_path} as a lock.")
         fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
@@ -153,7 +153,7 @@ class Config:
             if current != original:
                 raise ConfigError("Configuration changed in another program. Reload and retry.")
             if original is not None:
-                atomic_write(path.with_name(path.name + ".snowdock.bak"), original.decode())
+                atomic_write(path.with_name(path.name + ".snowbeam.bak"), original.decode())
             atomic_write(path, tomlkit.dumps(document))
 
     def save(self, name: str, settings: dict[str, str], *, create: bool = False) -> None:

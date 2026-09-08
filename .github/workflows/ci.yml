@@ -26,4 +26,4 @@ jobs:
       - run: uv run ruff format --check src tests tools
       - run: uv run pytest -q
       - run: uv build
-      - run: uv run snowdock --demo inventory --json
+      - run: uv run snowbeam --demo inventory --json

@@ -2,10 +2,10 @@ from datetime import UTC, datetime
 
 import pytest
 
-from snowdock.config import Config
-from snowdock.service import Service
-from snowdock.snowflake import SnowError
-from snowdock.store import Store
+from snowbeam.config import Config
+from snowbeam.service import Service
+from snowbeam.snowflake import SnowError
+from snowbeam.store import Store
 
 NOW = datetime(2026, 9, 8, 12, tzinfo=UTC)
 IDENTITY = {

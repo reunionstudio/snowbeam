@@ -4,8 +4,8 @@ import subprocess
 import pytest
 from conftest import IDENTITY
 
-from snowdock.config import Profile
-from snowdock.snowflake import (
+from snowbeam.config import Profile
+from snowbeam.snowflake import (
     IDENTITY_SQL,
     SnowClient,
     SnowError,

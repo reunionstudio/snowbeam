@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from conftest import IDENTITY, NOW, TOKEN
 
-from snowdock.store import expiry_label, iso, stale
+from snowbeam.store import expiry_label, iso, stale
 
 
 def seed(service):
@@ -19,7 +19,7 @@ def test_expirations_survive_failed_authentication_and_restart(service):
     result = service.refresh()
     assert result.refreshed == 0
     assert service.store.connections()[0]["status"] == "expired"
-    from snowdock.store import Store
+    from snowbeam.store import Store
 
     reopened = Store(service.store.directory)
     alert = reopened.alerts(now=NOW + timedelta(days=2))[0]

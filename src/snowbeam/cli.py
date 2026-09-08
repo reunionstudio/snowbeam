@@ -1,4 +1,4 @@
-"""Snowdock's human CLI and JSON surface for scripts and agents."""
+"""Snowbeam's human CLI and JSON surface for scripts and agents."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(
         description="Snowflake accounts, connections, and token expirations."
     )
-    root.add_argument("--version", action="version", version=f"Snowdock {__version__}")
+    root.add_argument("--version", action="version", version=f"Snowbeam {__version__}")
     root.add_argument("--state-dir", type=Path, help="Directory for the private metadata cache")
     root.add_argument(
         "--snow-config",
@@ -124,9 +124,9 @@ def run(args, service: Service) -> int:
                 "The app needs a terminal. Use inventory --json or "
                 "--demo check --json for headless output."
             )
-        from .tui import Snowdock
+        from .tui import Snowbeam
 
-        Snowdock(service, auto_refresh=not getattr(args, "offline", False)).run()
+        Snowbeam(service, auto_refresh=not getattr(args, "offline", False)).run()
         return 0
     if args.command in ("desktop", "reminders"):
         if service.demo:
@@ -138,7 +138,7 @@ def run(args, service: Service) -> int:
                 print(f"Reminder installed: {path}")
         else:
             remove_reminders()
-            print("Snowdock desktop reminders removed.")
+            print("Snowbeam desktop reminders removed.")
         return 0
     if args.command == "check":
         if args.days < 1:
@@ -286,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.demo:
             from .demo import demo_service
 
-            with tempfile.TemporaryDirectory(prefix="snowdock-demo-") as directory:
+            with tempfile.TemporaryDirectory(prefix="snowbeam-demo-") as directory:
                 return run(args, demo_service(Path(directory)))
         return run(
             args,
@@ -295,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
     except (ConfigError, SnowError, ValueError, OSError, sqlite3.Error) as exc:
-        print("Snowdock: " + safe_text(exc), file=sys.stderr)
+        print("Snowbeam: " + safe_text(exc), file=sys.stderr)
         return 2
     except KeyboardInterrupt:
         return 130

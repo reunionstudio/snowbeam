@@ -3,7 +3,7 @@ import stat
 import pytest
 import tomlkit
 
-from snowdock.config import Config, ConfigError, default_config_path
+from snowbeam.config import Config, ConfigError, default_config_path
 
 
 def test_connections_toml_precedence_and_preserve_secrets_comments(tmp_path):
@@ -30,7 +30,7 @@ def test_connections_toml_precedence_and_preserve_secrets_comments(tmp_path):
     assert values["role"] == "ANALYST"
     assert "OLD" in main.read_text()
     assert stat.S_IMODE(shared.stat().st_mode) == 0o600
-    assert stat.S_IMODE(shared.with_name("connections.toml.snowdock.bak").stat().st_mode) == 0o600
+    assert stat.S_IMODE(shared.with_name("connections.toml.snowbeam.bak").stat().st_mode) == 0o600
 
 
 def test_unknown_fields_cannot_be_added_to_metadata_config(service):

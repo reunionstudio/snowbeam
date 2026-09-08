@@ -91,7 +91,7 @@ class SnowClient:
         if not self.executable:
             raise SnowError("missing_cli", "Install Snowflake CLI: uv tool install snowflake-cli")
         if not interactive and not profile.background_safe:
-            raise SnowError("sign_in", "Interactive sign-in required; use Refresh in Snowdock.")
+            raise SnowError("sign_in", "Interactive sign-in required; use Refresh in Snowbeam.")
         command = [
             self.executable,
             "--config-file",

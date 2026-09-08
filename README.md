@@ -1,24 +1,23 @@
-# Snowdock
+# Snowbeam
 
-Your Snowflake accounts, connections, and token expirations. In one place.
+Your way into Snowflake.
 
-Snowdock is a small terminal app for Linux and macOS. Manage local Snowflake
+Snowbeam is a small terminal app for Linux and macOS. Manage local Snowflake
 connection profiles, keep a map of your organizations and accounts, and see
 programmatic access token (PAT) expirations before they interrupt your work.
 
 Independent of Airlock. Open source. MIT licensed.
 
-![Snowdock connection inventory with synthetic demo data](docs/snowdock.svg)
+![Snowbeam connection inventory with synthetic demo data](docs/snowbeam.svg)
 
 ## Try it
 
 Requires Python 3.11 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/).
 
 ```sh
-git clone https://github.com/reunionstudio/snowdock.git
-cd snowdock
+cd /path/to/snowbeam
 uv sync --frozen
-uv run snowdock --demo
+uv run snowbeam --demo
 ```
 
 The demo uses temporary, synthetic data. It does not read your Snowflake
@@ -29,10 +28,10 @@ For a persistent command available from any directory:
 ```sh
 uv tool install .
 uv tool install snowflake-cli
-snowdock
+snowbeam
 ```
 
-Snowdock is installed from this repository; there is no PyPI release yet.
+Snowbeam is currently a local repository; it has not been published to GitHub or PyPI.
 Snowflake CLI must be available as `snow` for live refreshes. Offline inventory
 and the demo work without it. You can select another executable with
 `--snow-executable /absolute/path/to/snow`.
@@ -59,7 +58,7 @@ A terminal of 120 columns is comfortable; 80 × 24 works with scrolling.
 New profiles default to browser SSO. The editor also supports PAT and key-pair
 authentication through credential **file paths**. Create and rotate credentials
 with Snowflake's own tools, then point the connection at them. Existing password
-and other authentication settings are preserved, but Snowdock does not offer
+and other authentication settings are preserved, but Snowbeam does not offer
 password input. A login needing a terminal prompt should be completed with
 Snowflake CLI first; browser SSO can open your browser during a manual refresh.
 
@@ -68,7 +67,7 @@ hourly while open. Browser sign-in requires an explicit refresh. For cached
 inventory without automatic network activity, run:
 
 ```sh
-snowdock tui --offline
+snowbeam tui --offline
 ```
 
 Expiry countdowns update locally every minute. A failed refresh retains the
@@ -76,17 +75,17 @@ last successful metadata and displays the failure. Checks older than 24 hours
 are flagged as stale. An empty or unverified inventory is never reported as
 proof that all tokens are safe.
 
-![Snowdock token attention view with synthetic demo data](docs/attention.svg)
+![Snowbeam token attention view with synthetic demo data](docs/attention.svg)
 
 ## What the inventory means
 
 A successful refresh records the authenticated organization, account name,
-account locator, region, user, role, and warehouse. Snowdock groups profiles
+account locator, region, user, role, and warehouse. Snowbeam groups profiles
 that resolve to the same account and retains known accounts locally.
 
 PAT inspection covers the **current user of each configured connection**. It
 is not an inventory of every user's tokens. The metadata command supplies names,
-status, expiration, and role restrictions, not token values. Snowdock cannot
+status, expiration, and role restrictions, not token values. Snowbeam cannot
 infer which opaque token a profile uses: `b` records an explicit association.
 See Snowflake's [PAT metadata reference](https://docs.snowflake.com/en/sql-reference/sql/show-user-programmatic-access-tokens).
 
@@ -95,24 +94,24 @@ privileges. It adds known accounts; it does not create connection profiles or
 inspect users in those accounts. A denied discovery does not erase earlier
 results. See Snowflake's [SHOW ACCOUNTS reference](https://docs.snowflake.com/en/sql-reference/sql/show-accounts).
 
-Snowdock does not create, rotate, revoke, or renew PATs. An expired PAT can
+Snowbeam does not create, rotate, revoke, or renew PATs. An expired PAT can
 prevent refreshing its own inventory; use a working connection for the same
 account and user to inspect it again. Local profile removal does not revoke a
 credential or erase cached expiration records.
 
 ## Configuration and local storage
 
-Snowdock follows Snowflake CLI's configuration discovery: `SNOWFLAKE_HOME`,
+Snowbeam follows Snowflake CLI's configuration discovery: `SNOWFLAKE_HOME`,
 then an existing `~/.snowflake` directory, then the platform's Snowflake config
 directory. An adjacent `connections.toml` takes precedence over connection
 tables in `config.toml`. Select an explicit file with:
 
 ```sh
-snowdock --snow-config /path/to/config.toml
+snowbeam --snow-config /path/to/config.toml
 ```
 
 Edits preserve comments and fields outside the editor. Each changed TOML file
-gets a private `.snowdock.bak` snapshot of its previous contents. Writes are
+gets a private `.snowbeam.bak` snapshot of its previous contents. Writes are
 atomic, use mode `0600`, and reject symlinks and detected concurrent edits.
 Environment overrides are reflected in inventory but are not changed by the
 editor. Snowflake CLI's [configuration guide](https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting/configure-cli)
@@ -120,8 +119,8 @@ describes the underlying format and environment variables.
 
 The metadata cache is `inventory.sqlite3` under:
 
-- Linux: `$XDG_DATA_HOME/snowdock`, normally `~/.local/share/snowdock`.
-- macOS: `~/Library/Application Support/snowdock`.
+- Linux: `$XDG_DATA_HOME/snowbeam`, normally `~/.local/share/snowbeam`.
+- macOS: `~/Library/Application Support/snowbeam`.
 - Either platform: a directory selected with `--state-dir /path/to/directory`.
 
 The database stores account identifiers, usernames, selected connection
@@ -132,28 +131,28 @@ present. Snowflake CLI handles authentication and has its own logging settings.
 The cache is private to the filesystem user, not encrypted. JSON exports also
 contain identifiers and usernames.
 
-There is no Snowdock server, telemetry, or remote sync. Live checks run fixed
-metadata SQL through the installed Snowflake CLI. Snowdock does not query
+There is no Snowbeam server, telemetry, or remote sync. Live checks run fixed
+metadata SQL through the installed Snowflake CLI. Snowbeam does not query
 business tables or change Snowflake objects.
 
 ## Linux and Omarchy
 
-After a persistent installation, add Snowdock to your application launcher:
+After a persistent installation, add Snowbeam to your application launcher:
 
 ```sh
-snowdock desktop install
+snowbeam desktop install
 ```
 
-This writes a standard `snowdock.desktop` entry with `Terminal=true`. The desktop
+This writes a standard `snowbeam.desktop` entry with `Terminal=true`. The desktop
 must support launching terminal applications. No Omarchy configuration is
 replaced. The launcher depends on the installed Python environment remaining in
-place; reinstall it after moving or reinstalling Snowdock.
+place; reinstall it after moving or reinstalling Snowbeam.
 
 ## Optional desktop reminders
 
 ```sh
-snowdock reminders install
-snowdock reminders remove
+snowbeam reminders install
+snowbeam reminders remove
 ```
 
 Installation **enables** a per-user job: daily around 09:00 on Linux with systemd,
@@ -175,18 +174,18 @@ Global options go before the command. These commands use the same config and
 cache as the terminal app:
 
 ```sh
-snowdock connections list --json
-snowdock connections add work --account MYORG-MYACCOUNT --user ME
-snowdock connections edit work --role ANALYST --warehouse COMPUTE_WH
-snowdock connections default work
-snowdock refresh work
-snowdock refresh work --organization
-snowdock connections bind-token work MY_PAT_NAME
-snowdock inventory --json
-snowdock tokens --json
-snowdock check --json
-snowdock check --refresh --notify
-snowdock connections remove work --yes
+snowbeam connections list --json
+snowbeam connections add work --account MYORG-MYACCOUNT --user ME
+snowbeam connections edit work --role ANALYST --warehouse COMPUTE_WH
+snowbeam connections default work
+snowbeam refresh work
+snowbeam refresh work --organization
+snowbeam connections bind-token work MY_PAT_NAME
+snowbeam inventory --json
+snowbeam tokens --json
+snowbeam check --json
+snowbeam check --refresh --notify
+snowbeam connections remove work --yes
 ```
 
 Pass an empty string to clear an editable setting or a PAT association.
@@ -216,7 +215,7 @@ uv run python tools/capture_demo.py
 Tests cover config precedence and safe editing, metadata-only persistence,
 account deduplication, stale/failed checks, expiry boundaries, token association,
 CLI errors, notification deduplication, scheduler files, and terminal interaction.
-CI runs on Linux and macOS with Python 3.11 and 3.13. All test data is synthetic;
+CI is configured for Linux and macOS with Python 3.11 and 3.13. All test data is synthetic;
 tests do not read local credentials or connect to Snowflake.
 
 Initial validation used Snowflake CLI 3.17.1 for command/config compatibility.

@@ -76,18 +76,18 @@ PRAGMA user_version = 1;
 
 class Store:
     def __init__(self, directory: Path | None = None):
-        self.directory = (directory or user_data_path("snowdock", appauthor=False)).expanduser()
+        self.directory = (directory or user_data_path("snowbeam", appauthor=False)).expanduser()
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.path = self.directory / "inventory.sqlite3"
         if self.path.is_symlink():
-            raise ValueError("Snowdock's metadata database must not be a symlink.")
+            raise ValueError("Snowbeam's metadata database must not be a symlink.")
         fd = os.open(self.path, os.O_CREAT | os.O_RDWR, 0o600)
         os.close(fd)
         os.chmod(self.path, 0o600)
         with self.db() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
-                raise ValueError("This cache was created by a newer Snowdock. Upgrade Snowdock.")
+                raise ValueError("This cache was created by a newer Snowbeam. Upgrade Snowbeam.")
             db.executescript(SCHEMA)
 
     @contextmanager
