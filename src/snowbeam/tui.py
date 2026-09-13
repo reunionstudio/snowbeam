@@ -276,7 +276,7 @@ class Snowbeam(App):
         yield Static("", id="summary", markup=False)
         with Horizontal(id="workspace"):
             with Vertical(id="sidebar"):
-                yield Tree("All organizations", id="inventory")
+                yield Tree("Organizations", id="inventory")
                 yield Static("", id="scope-caption", markup=False)
                 yield Button("Alias / notes", id="labels", disabled=True)
             with Vertical(id="content"):
@@ -541,7 +541,7 @@ class Snowbeam(App):
         self.query_one("#connection-note", Static).update(
             "Select a connection. T tests it and refreshes its token inventory."
             if connections
-            else "No connections in this view. Press A to add one, or select All organizations."
+            else "No connections in this view. Press A to add one, or select Organizations."
         )
         token_table = self.query_one("#tokens", DataTable)
         token_table.clear()

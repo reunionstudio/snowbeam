@@ -3,6 +3,11 @@
 Versions follow Python package versioning. Pre-release tags match package versions
 with a `v` prefix. This file records user-visible changes and known limitations.
 
+## 0.2.0a3 — 2026-09-13
+
+- Use **Organizations** for the tree heading and **Accounts** for the CLI inventory
+  heading. Update the empty-state guidance and synthetic app captures to match.
+
 ## 0.2.0a2 — 2026-09-13
 
 - Give organizations and accounts their own local aliases and multiline notes

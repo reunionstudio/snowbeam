@@ -377,7 +377,7 @@ def run(args, service: Service) -> int:
         )
     else:
         print_table(
-            "Known accounts · visibility depends on your privileges",
+            "Accounts · visibility depends on your privileges",
             ("Organization", "Account", "Locator", "Region", "Last verified"),
             [
                 (
