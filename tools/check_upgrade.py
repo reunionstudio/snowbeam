@@ -74,8 +74,16 @@ assert service.config.path.read_text() == before["config"]
 assert service.fleet.config.path.read_text() == before["fleet"]
 assert not service.preferences.automatic_updates()
 with service.store.db() as db:
-    assert db.execute("PRAGMA user_version").fetchone()[0] == 3
-print("Upgrade retained synthetic profiles, identities, token metadata, and operation history.")
+    assert db.execute("PRAGMA user_version").fetchone()[0] == 4
+account_id = service.store.accounts()[0]["id"]
+service.store.set_labels("organization", "ACME", alias="Acme Accounting LLC")
+service.store.set_labels(
+    "account", account_id, alias="After upgrade", notes="Line one.\\nLine two."
+)
+reopened = Store(service.store.directory)
+assert reopened.labels("organization", "ACME")["alias"] == "Acme Accounting LLC"
+assert reopened.labels("account", account_id)["notes"] == "Line one.\\nLine two."
+print("Upgrade retained profiles, identities, tokens, and operations; local labels persist.")
 """,
         )
         run(

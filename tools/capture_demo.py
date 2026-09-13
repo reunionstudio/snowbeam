@@ -29,7 +29,13 @@ async def capture() -> None:
             app.action_updates()
             await pilot.pause()
             app.save_screenshot("updates.svg", path=str(output))
-    for name in ("snowbeam.svg", "identities.svg", "attention.svg", "updates.svg"):
+            await pilot.press("escape")
+            app.scope = ("org", "ACME")
+            app.render_data(rebuild_tree=True)
+            app.action_labels()
+            await pilot.pause()
+            app.save_screenshot("aliases.svg", path=str(output))
+    for name in ("snowbeam.svg", "identities.svg", "attention.svg", "updates.svg", "aliases.svg"):
         path = output / name
         path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
 

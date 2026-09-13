@@ -136,6 +136,19 @@ def demo_service(directory: Path) -> Service:
     service = Service(config, Store(directory / "data"), DemoClient())
     service.demo = True
     service.refresh()
+    service.store.set_labels(
+        "organization",
+        "ACME",
+        alias="Acme Accounting LLC",
+        notes="Client accounting team.\nReview production access with the account owner.",
+    )
+    production = next(a for a in service.store.accounts() if a["name"] == "PRODUCTION")
+    service.store.set_labels(
+        "account",
+        production["id"],
+        alias="Production",
+        notes="Monthly close and approved deployments.",
+    )
     service.store.bind_token(config.profile("production-deploy").key, "DEPLOYMENT")
     fleet = service.fleet
     for key, connection, kind, client, runtime, purpose in (

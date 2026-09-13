@@ -23,6 +23,8 @@ from textual.widgets import (
 
 from .config import AUTH_METHODS, FIELDS, Config, ConfigError
 from .fleet_tui import Evidence, IdentityForm, LifecycleChoice, PlanReview
+from .labels import display_name
+from .labels_tui import LabelForm
 from .provision import Provisioner
 from .service import RefreshResult, Service
 from .snowflake import SnowError, safe_text
@@ -200,10 +202,15 @@ class Snowbeam(App):
     Footer { background: #13263a; }
     #summary { height: 4; padding: 1 2; background: #101e2e; }
     #workspace { height: 1fr; }
-    #inventory {
-        width: 27; min-width: 19; padding: 1; background: #101e2e;
+    #sidebar {
+        width: 32; min-width: 19; background: #101e2e;
         border-right: solid #233d53;
     }
+    #inventory { height: 1fr; padding: 1; background: #101e2e; }
+    #scope-caption { height: auto; max-height: 4; padding: 0 1; color: #9eb3c4; }
+    #labels { margin: 0 1; height: 3; width: 1fr; }
+    #label-notes { height: 8; min-height: 4; }
+    #label-dialog { height: auto; max-height: 90%; }
     #content { width: 1fr; }
     TabbedContent { height: 1fr; }
     ContentSwitcher { height: 1fr; }
@@ -238,6 +245,7 @@ class Snowbeam(App):
         ("t", "refresh_selected", "Test selected"),
         ("a", "add", "Add"),
         ("e", "edit", "Edit"),
+        ("n", "labels", "Alias / notes"),
         ("b", "bind", "Associate PAT"),
         ("o", "discover", "Discover accounts"),
         ("c", "copy_identifier", "Copy account"),
@@ -256,6 +264,7 @@ class Snowbeam(App):
         self.upgrading = False
         self.selected_connection: str | None = None
         self.scope: tuple[str, str] | None = None
+        self.accounts: dict[str, dict] = {}
         self.busy = False
         self.table_connections: dict[str, dict] = {}
         self.table_tokens: dict[str, dict] = {}
@@ -266,7 +275,10 @@ class Snowbeam(App):
         yield Header(show_clock=True)
         yield Static("", id="summary", markup=False)
         with Horizontal(id="workspace"):
-            yield Tree("Known organizations", id="inventory")
+            with Vertical(id="sidebar"):
+                yield Tree("All organizations", id="inventory")
+                yield Static("", id="scope-caption", markup=False)
+                yield Button("Alias / notes", id="labels", disabled=True)
             with Vertical(id="content"):
                 with TabbedContent():
                     with TabPane("Connections", id="connections-tab"):
@@ -449,6 +461,10 @@ class Snowbeam(App):
     def render_data(self, *, rebuild_tree: bool = False) -> None:
         store = self.service.store
         accounts = store.accounts()
+        rebuild_tree = rebuild_tree or accounts != list(self.accounts.values())
+        self.accounts = {row["id"]: row for row in accounts}
+        if self.scope and not any(self.in_scope(row) for row in accounts):
+            self.scope = None
         connections = [row for row in store.connections() if self.in_scope(row)]
         tokens = [row for row in store.tokens() if self.in_scope(row)]
         alerts = [row for row in store.alerts() if self.in_scope(row)]
@@ -465,28 +481,38 @@ class Snowbeam(App):
         )
         if rebuild_tree:
             tree = self.query_one("#inventory", Tree)
+            tree.move_cursor(None)
             tree.clear()
             tree.root.data = None
+            selected = tree.root
+            nodes = [tree.root]
             organizations = {}
             for account in accounts:
                 org = account["organization"]
                 if org not in organizations:
                     organizations[org] = tree.root.add(
-                        literal(org, "bold"), data=("org", org), expand=True
+                        literal(account["organization_alias"] or org, "bold"),
+                        data=("org", org),
+                        expand=True,
                     )
-                organizations[org].add_leaf(
-                    literal(account["name"]), data=("account", account["id"])
+                    nodes.append(organizations[org])
+                node = organizations[org].add_leaf(
+                    literal(account["account_alias"] or account["name"]),
+                    data=("account", account["id"]),
                 )
+                nodes.append(node)
+                if node.data == self.scope:
+                    selected = node
+                elif organizations[org].data == self.scope:
+                    selected = organizations[org]
             tree.root.expand()
+            tree.move_cursor_to_line(nodes.index(selected))
+        self.show_scope()
         table = self.query_one("#connections", DataTable)
         table.clear()
         self.table_connections = {row["id"]: row for row in connections}
         for row in connections:
-            account = (
-                f"{row['organization']} / {row['account_name']}"
-                if row["account_id"]
-                else "Unverified"
-            )
+            account = self.account_label(row) if row["account_id"] else "Unverified"
             health = "Verified" if row["status"] == "ok" else row["status"].replace("_", " ")
             if row["status"] == "ok" and stale(row["checked_at"]):
                 health = "Stale check"
@@ -525,7 +551,7 @@ class Snowbeam(App):
             self.table_tokens[key] = row
             token_table.add_row(
                 literal(row["name"]),
-                literal(row["account_name"]),
+                literal(self.account_label(row, organization=False)),
                 literal(row["user_name"]),
                 literal(row["status"]),
                 literal((row["expires_at"] or "Unknown")[:16].replace("T", " ")),
@@ -544,7 +570,7 @@ class Snowbeam(App):
                 row["status"] if row["status"] not in {"ACTIVE", "EXPIRED"} else row["expiry_label"]
             )
             attention.add_row(
-                literal(f"{row['organization']} / {row['account_name']} / {row['user_name']}"),
+                literal(f"{self.account_label(row)} / {row['user_name']}"),
                 literal(row["name"]),
                 literal(label, "yellow"),
                 literal(
@@ -577,6 +603,48 @@ class Snowbeam(App):
         self.scope = event.node.data
         self.render_data()
 
+    def account_label(self, row: dict, *, organization: bool = True, identifiers: bool = False):
+        account = self.accounts.get(row.get("account_id", row.get("id")), {})
+        org = row.get("organization") or "?"
+        name = row.get("account_name") or account.get("name") or "?"
+        org_alias, alias = account.get("organization_alias"), account.get("account_alias")
+        if identifiers:
+            org, name = display_name(org, org_alias), display_name(name, alias)
+        else:
+            org, name = org_alias or org, alias or name
+        return f"{org} / {name}" if organization else name
+
+    def show_scope(self) -> None:
+        self.query_one("#labels", Button).disabled = self.scope is None
+        caption = "Select an organization or account to add an alias and notes."
+        if self.scope:
+            kind, key = self.scope
+            record = self.service.store.labels("organization" if kind == "org" else kind, key)
+            caption = safe_text(display_name(record["identifier"], record["alias"]))
+            if record["notes"]:
+                caption += "\n" + "\n".join(
+                    safe_text(line) for line in record["notes"].splitlines()[:3]
+                )
+        self.query_one("#scope-caption", Static).update(caption)
+
+    @on(Button.Pressed, "#labels")
+    def action_labels(self) -> None:
+        if len(self.screen_stack) > 1:
+            return
+        if not self.scope:
+            self.message("Select an organization or account in the tree, then press N.")
+            return
+        kind, key = self.scope
+
+        def saved(changed: bool) -> None:
+            if changed:
+                self.render_data(rebuild_tree=True)
+                self.message("Alias and notes saved on this device.")
+
+        self.push_screen(
+            LabelForm(self.service.store, "organization" if kind == "org" else kind, key), saved
+        )
+
     @on(DataTable.RowHighlighted, "#connections")
     def connection_selected(self, event: DataTable.RowHighlighted) -> None:
         key = str(event.row_key.value)
@@ -587,7 +655,10 @@ class Snowbeam(App):
 
     def show_connection_details(self, row: dict) -> None:
         self.query_one("#details", Static).update(
-            safe_text(f"{row['name']}  ·  {row['message'] or row['status']}\n").rstrip()
+            safe_text(
+                f"{row['organization'] or '?'}-{row['account_name'] or '?'}  ·  "
+                f"{row['name']}  ·  {row['message'] or row['status']}"
+            )
             + f"\nConfiguration: {safe_text(row['source_path'])}"
             + f"\nLast verified: {safe_text(row['checked_at'] or 'Never')}"
             + "  ·  Role: "
@@ -783,6 +854,8 @@ class Snowbeam(App):
                     "runtime",
                 )
             ).casefold()
+            + " "
+            + self.account_label(r, identifiers=True).casefold()
         ]
         table = self.query_one("#identities", DataTable)
         table.clear()
@@ -795,7 +868,7 @@ class Snowbeam(App):
                     "cyan" if row["status"] in {"Matches template", "Inspected"} else "yellow",
                 ),
                 literal(row["client"]),
-                literal(f"{row['organization'] or '?'} / {row['account_name'] or '?'}"),
+                literal(self.account_label(row)),
                 literal(row["runtime"]),
                 key=row["id"],
             )

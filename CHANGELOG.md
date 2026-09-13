@@ -3,6 +3,19 @@
 Versions follow Python package versioning. Pre-release tags match package versions
 with a `v` prefix. This file records user-visible changes and known limitations.
 
+## 0.2.0a2 — 2026-09-13
+
+- Give organizations and accounts their own local aliases and multiline notes
+  through the tree's **Alias / notes** editor (`n`) or `snowbeam labels`.
+- Show friendly names in the inventory, retain real identifiers in details and
+  clipboard copies, and search identities by organization/account alias.
+- Preserve annotations across refreshes, restarts, and upgrades. Account labels
+  follow the existing stable account ID when a rename is recognized.
+- Migrate local inventory to schema 4 and include annotations as separate fields
+  in `inventory --json`. Earlier app versions cannot open the migrated database.
+
+See the [release notes](docs/releases/0.2.0a2.md) for installation and validation limits.
+
 ## 0.2.0a1 — 2026-09-13
 
 First alpha release of Snowbeam.

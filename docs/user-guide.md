@@ -12,6 +12,7 @@ A terminal of 120 columns is comfortable; 80 × 24 works with scrolling.
 | --- | --- |
 | `a` / Add | Add a connection; on Identities, record a new agent from a template |
 | `e` / Edit | Edit connection settings or identity labels |
+| `n` / Alias / notes | Name and annotate the selected organization or account locally |
 | Default | Make the selected profile the Snowflake CLI default |
 | Remove | Confirm removal of a local profile |
 | `t` | Test a connection; on Identities, inspect security metadata |
@@ -79,7 +80,7 @@ The Updates panel (`u`) is separate from Snowflake refresh. See
 
 ## Consultant and agent inventory
 
-Search Identities by client, organization, account, user, owner, or runtime.
+Search Identities by client, organization, account, alias, user, owner, or runtime.
 Label existing profiles, inspect their policies, and use account-bound templates
 for new agents. Missing or stale evidence stays visible. Policy contents and
 direct role-grant changes are compared with the approved setup.
@@ -95,6 +96,44 @@ snowbeam identities list --client Acme --json
 The [identity and security guide](security.md) covers individual PAT/key/WIF
 setup, vault references, reviewed plan/apply, runtime tests, rotation, revocation,
 and the boundary between a connection catalog and actual access isolation.
+
+## Organization and account aliases
+
+Select an organization or account in the left tree, then click **Alias / notes**
+or press `n`. Enter a friendly name and any local notes, then **Save**. For example,
+organization `FLXH5C4T` can appear as **Acme Accounting LLC**. Accounts have their
+own aliases and notes. Leave a field empty to clear it; Escape cancels the edit.
+
+The tree and tables use the friendly names. The selected tree item's caption,
+connection/token details, and alias editor retain the real identifiers. Copying
+an account with `c` always copies the verified Snowflake identifier. Aliases do
+not rename Snowflake objects, change connection settings, or affect permissions.
+Identity search matches aliases as well as identifiers.
+
+These commands read or edit the same local records without connecting to Snowflake:
+
+```sh
+snowbeam labels organization FLXH5C4T --alias "Acme Accounting LLC"
+snowbeam labels organization FLXH5C4T --notes "Client accounting team."
+snowbeam labels account FLXH5C4T-PROD --alias "Finance production"
+snowbeam labels account FLXH5C4T-PROD --json
+```
+
+Use identifiers from your known inventory. If an account identifier is ambiguous,
+use its exact `id` from `snowbeam inventory --json`. Omitted flags preserve the
+existing field; `--alias ""` or `--notes ""` clears it. Aliases allow 120 characters;
+notes allow 8,000 characters, including multiple lines. Keep credentials in your
+vault, never in notes.
+
+Aliases and notes persist across refreshes, restarts, and package upgrades in
+`inventory.sqlite3`. Account annotations follow the existing local account ID
+when a refresh recognizes an account rename by locator and region. Organization
+annotations belong to the exact organization identifier; Snowbeam does not guess
+that a renamed organization is the same one. They are local to this state
+directory and are not synced to another device. Back up the database with your
+local state: deleting it also deletes these annotations.
+
+![Organization alias and notes editor with synthetic data](aliases.svg)
 
 ## What the inventory means
 
@@ -139,7 +178,7 @@ Environment overrides are reflected in inventory but are not changed by the
 editor. Snowflake CLI's [configuration guide](https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting/configure-cli)
 describes the underlying format and environment variables.
 
-The metadata cache is `inventory.sqlite3` under:
+The local inventory and annotations are in `inventory.sqlite3` under:
 
 - Linux: `$XDG_DATA_HOME/snowbeam`, normally `~/.local/share/snowbeam`.
 - macOS: `~/Library/Application Support/snowbeam`.
@@ -147,12 +186,14 @@ The metadata cache is `inventory.sqlite3` under:
 
 The database stores account identifiers, usernames, selected connection
 settings and credential paths, policy/grant evidence, PAT metadata, vault
-references, lifecycle journals, check timestamps, and reminder history. It does
+references, lifecycle journals, check timestamps, reminder history, and your
+organization/account aliases and notes. It does
 not store token values, passwords, or private keys. Existing
 secrets remain in the original Snowflake configuration **and its backup** when
 present. Snowflake CLI handles authentication and has its own logging settings.
 The cache is private to the filesystem user, not encrypted. JSON exports also
-contain identifiers and usernames.
+contain identifiers and usernames; `inventory --json` also includes aliases and notes
+as separate fields on account records. The original identifier fields remain unchanged.
 
 The same directory holds `preferences.toml` (refresh intervals and the optional
 update-check preference) and `updates.json` (public release versions and check

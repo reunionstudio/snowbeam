@@ -14,10 +14,10 @@ credentials through reviewed plans. Snowflake enforces access; 1Password or
 Bitwarden holds managed tokens and private keys; your chosen runtime runs the
 agent. Snowbeam works independently of Airlock.
 
-**Alpha: `0.2.0a1`.** Source and versioned downloads are available through
+**Alpha: `0.2.0a2`.** Source and versioned downloads are available through
 [GitHub releases](https://github.com/reunionstudio/snowbeam/releases). Live Snowflake provisioning, vault writes, cloud
 workload authentication, and Omarchy desktop validation remain pending. See the
-[alpha release notes](https://github.com/reunionstudio/snowbeam/blob/main/docs/releases/0.2.0a1.md).
+[alpha release notes](https://github.com/reunionstudio/snowbeam/blob/main/docs/releases/0.2.0a2.md).
 
 ![Snowbeam identity inventory with synthetic data](https://reunionstudio.io/assets/snowbeam/identities.png)
 
@@ -38,7 +38,7 @@ On Omarchy or another Linux desktop, with
 [uv](https://docs.astral.sh/uv/getting-started/installation/) installed:
 
 ```sh
-uv tool install https://github.com/reunionstudio/snowbeam/releases/download/v0.2.0a1/snowbeam-0.2.0a1-py3-none-any.whl
+uv tool install https://github.com/reunionstudio/snowbeam/releases/download/v0.2.0a2/snowbeam-0.2.0a2-py3-none-any.whl
 snowbeam --version
 snowbeam --demo
 ```
@@ -56,7 +56,7 @@ If uv reports that its executable directory is missing from `PATH`, run
 The Homebrew formula uses checksummed sources and locked runtime dependencies.
 No Snowbeam package is published to PyPI or AUR, and no macOS DMG is provided.
 Downloads and `SHA256SUMS` are on the
-[alpha release](https://github.com/reunionstudio/snowbeam/releases/tag/v0.2.0a1).
+[alpha release](https://github.com/reunionstudio/snowbeam/releases/tag/v0.2.0a2).
 
 ## Connect to your inventory
 
@@ -75,6 +75,14 @@ Running `snowbeam` normally refreshes eligible connections when due, hourly by
 default. Per-connection intervals and failure backoff persist in local state.
 Browser sign-in requires an explicit refresh. Creating,
 rotating, or revoking a managed credential requires a reviewed plan and apply.
+
+## Use names you recognize
+
+Give organizations and accounts local aliases and notes. Select one in the left
+tree and choose **Alias / notes** (`n`). For example, `FLXH5C4T` can appear as
+**Acme Accounting LLC**. The real identifiers remain available and are still used
+for connections and clipboard copies. Labels survive refreshes and upgrades.
+See the [alias editor and CLI commands](docs/user-guide.md#organization-and-account-aliases).
 
 ## Upgrade or uninstall
 

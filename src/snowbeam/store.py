@@ -1,4 +1,4 @@
-"""Private, offline metadata cache. Credentials never enter this database."""
+"""Private local inventory and annotations. Credentials never enter this database."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from pathlib import Path
 from platformdirs import user_data_path
 
 from .config import Profile
+from .labels import validate_label
 from .snowflake import timestamp
 
 
@@ -88,7 +89,14 @@ CREATE TABLE IF NOT EXISTS refresh_schedule (
     connection_id TEXT PRIMARY KEY, interval_minutes INTEGER NOT NULL,
     failures INTEGER NOT NULL DEFAULT 0, next_attempt TEXT NOT NULL
 );
-PRAGMA user_version = 3;
+CREATE TABLE IF NOT EXISTS organization_labels (
+    organization TEXT PRIMARY KEY, alias TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS account_labels (
+    account_id TEXT PRIMARY KEY REFERENCES accounts(id),
+    alias TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT ''
+);
+PRAGMA user_version = 4;
 """
 
 
@@ -104,7 +112,7 @@ class Store:
         os.chmod(self.path, 0o600)
         with self.db() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1, 2, 3):
+            if version not in (0, 1, 2, 3, 4):
                 raise ValueError("This cache was created by a newer Snowbeam. Upgrade Snowbeam.")
             db.executescript(SCHEMA)
 
@@ -321,8 +329,59 @@ class Store:
     def accounts(self) -> list[dict]:
         with self.db() as db:
             return [
-                dict(row) for row in db.execute("SELECT * FROM accounts ORDER BY organization,name")
+                dict(row)
+                for row in db.execute("""SELECT a.*,
+                    COALESCE(o.alias,'') AS organization_alias,
+                    COALESCE(o.notes,'') AS organization_notes,
+                    COALESCE(l.alias,'') AS account_alias, COALESCE(l.notes,'') AS account_notes
+                    FROM accounts a
+                    LEFT JOIN organization_labels o ON o.organization=a.organization
+                    LEFT JOIN account_labels l ON l.account_id=a.id
+                    ORDER BY a.organization,a.name""")
             ]
+
+    @staticmethod
+    def _label_target(db, kind: str, key: str) -> tuple[str, str, str]:
+        if kind == "organization":
+            row = db.execute(
+                "SELECT organization FROM accounts WHERE organization=? LIMIT 1", (key,)
+            ).fetchone()
+            target = ("organization_labels", "organization", key)
+        elif kind == "account":
+            row = db.execute("SELECT organization,name FROM accounts WHERE id=?", (key,)).fetchone()
+            target = ("account_labels", "account_id", f"{row[0]}-{row[1]}" if row else "")
+        else:
+            raise ValueError("Choose an organization or account.")
+        if not row:
+            raise ValueError("Choose an organization or account from the local inventory.")
+        return target
+
+    def labels(self, kind: str, key: str) -> dict:
+        with self.db() as db:
+            table, column, identifier = self._label_target(db, kind, key)
+            row = db.execute(f"SELECT alias,notes FROM {table} WHERE {column}=?", (key,)).fetchone()
+        return {
+            "kind": kind,
+            "key": key,
+            "identifier": identifier,
+            "alias": row["alias"] if row else "",
+            "notes": row["notes"] if row else "",
+        }
+
+    def set_labels(
+        self, kind: str, key: str, *, alias: str | None = None, notes: str | None = None
+    ) -> None:
+        alias = validate_label(alias) if alias is not None else None
+        notes = validate_label(notes, notes=True) if notes is not None else None
+        with self.db() as db:
+            table, column, _ = self._label_target(db, kind, key)
+            db.execute(
+                f"""INSERT INTO {table} ({column},alias,notes)
+                    VALUES (?,COALESCE(?,''),COALESCE(?,''))
+                    ON CONFLICT({column}) DO UPDATE SET
+                    alias=COALESCE(?,{table}.alias),notes=COALESCE(?,{table}.notes)""",
+                (key, alias, notes, alias, notes),
+            )
 
     def connections(self) -> list[dict]:
         with self.db() as db:

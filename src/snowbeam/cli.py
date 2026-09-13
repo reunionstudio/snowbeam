@@ -15,6 +15,7 @@ from rich.table import Table
 from . import __version__
 from .config import FIELDS, Config, ConfigError
 from .desktop import install_launcher, install_reminders, notify_due, remove_reminders
+from .labels import display_name
 from .service import Service
 from .snowflake import SnowClient, SnowError, safe_text
 from .store import Store, expiry_label
@@ -52,6 +53,16 @@ def parser() -> argparse.ArgumentParser:
         "inventory", help="Show cached organization and account inventory"
     )
     inventory.add_argument("--json", action="store_true")
+    labels = commands.add_parser("labels", help="Read or edit local organization/account labels")
+    labels.add_argument("kind", choices=["organization", "account"])
+    labels.add_argument(
+        "target", help="Organization identifier, organization-account, or account ID"
+    )
+    labels.add_argument("--alias", help="Friendly name; an empty string clears it")
+    labels.add_argument(
+        "--notes", help="Local notes; an empty string clears them. Never enter secrets."
+    )
+    labels.add_argument("--json", action="store_true")
     tokens = commands.add_parser("tokens", help="Show cached PAT metadata")
     tokens.add_argument("--json", action="store_true")
     refresh = commands.add_parser(
@@ -144,6 +155,30 @@ def run(args, service: Service) -> int:
         service.fleet = FleetService(service, args.fleet_config)
     if args.command in COMMANDS:
         return run_fleet(args, service)
+    if args.command == "labels":
+        key = args.target
+        if args.kind == "account":
+            matches = [
+                a
+                for a in service.store.accounts()
+                if key in (a["id"], f"{a['organization']}-{a['name']}")
+            ]
+            if len(matches) != 1:
+                raise ValueError(
+                    "Choose one known account by its organization-account identifier or "
+                    "its exact id from inventory --json."
+                )
+            key = matches[0]["id"]
+        if args.alias is not None or args.notes is not None:
+            service.store.set_labels(args.kind, key, alias=args.alias, notes=args.notes)
+        record = service.store.labels(args.kind, key)
+        if args.json:
+            emit(record)
+        else:
+            print(safe_text(display_name(record["identifier"], record["alias"])))
+            for line in record["notes"].splitlines():
+                print(safe_text(line))
+        return 0
     if args.command == "updates":
         from .installation import upgrade_instructions
         from .updates import Updates, describe
@@ -345,7 +380,13 @@ def run(args, service: Service) -> int:
             "Known accounts · visibility depends on your privileges",
             ("Organization", "Account", "Locator", "Region", "Last verified"),
             [
-                (a["organization"], a["name"], a["locator"], a["region"], a["checked_at"])
+                (
+                    display_name(a["organization"], a["organization_alias"]),
+                    display_name(a["name"], a["account_alias"]),
+                    a["locator"],
+                    a["region"],
+                    a["checked_at"],
+                )
                 for a in accounts
             ],
         )
