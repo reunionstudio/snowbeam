@@ -124,4 +124,4 @@ brew uninstall reunionstudio/tap/snowbeam
 A DMG is not part of this terminal alpha. A future downloadable Mac application
 would need a bundled runtime, a terminal launcher or a native interface, Developer
 ID signing, notarization, architecture testing, and its own update mechanism.
-Homebrew is the supported distribution design for this release preparation.
+Homebrew is the Mac distribution for this alpha.

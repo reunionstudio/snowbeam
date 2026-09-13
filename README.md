@@ -130,7 +130,7 @@ describes configuration, storage paths, launchers, and reminders.
 
 - [User guide](https://github.com/reunionstudio/snowbeam/blob/main/docs/user-guide.md): terminal controls, inventory, configuration, CLI commands, and desktop integration.
 - [Identity and security guide](https://github.com/reunionstudio/snowbeam/blob/main/docs/security.md): vaults, plan/apply, runtime handoff, rotation, and recovery.
-- [Changelog](https://github.com/reunionstudio/snowbeam/blob/main/CHANGELOG.md) and [release preparation](https://github.com/reunionstudio/snowbeam/blob/main/docs/releasing.md).
+- [Changelog](https://github.com/reunionstudio/snowbeam/blob/main/CHANGELOG.md) and [release process](https://github.com/reunionstudio/snowbeam/blob/main/docs/releasing.md).
 - [Contributing](https://github.com/reunionstudio/snowbeam/blob/main/CONTRIBUTING.md) and [reporting a security issue](https://github.com/reunionstudio/snowbeam/blob/main/SECURITY.md).
 
 The alpha has local tests and package-installation checks. GitHub Actions are
