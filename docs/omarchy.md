@@ -10,13 +10,13 @@ Omarchy desktop validation remains pending.
 With [uv](https://docs.astral.sh/uv/getting-started/installation/) installed, run:
 
 ```sh
-uv tool install https://github.com/reunionstudio/snowbeam/releases/download/v0.2.0a4/snowbeam-0.2.0a4-py3-none-any.whl
+uv tool install https://github.com/reunionstudio/snowbeam/releases/download/v0.2.0a3/snowbeam-0.2.0a3-py3-none-any.whl
 snowbeam --version
 snowbeam --demo
 ```
 
 Snowbeam requires Python 3.11 or newer; uv can provision a compatible interpreter.
-No Git checkout or local build is needed. The [release page](https://github.com/reunionstudio/snowbeam/releases/tag/v0.2.0a4)
+No Git checkout or local build is needed. The [release page](https://github.com/reunionstudio/snowbeam/releases/tag/v0.2.0a3)
 also provides the wheel, source archive, and checksums for manual downloads.
 
 If you do not have uv, install it using Astral's official installer, then reopen

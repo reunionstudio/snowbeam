@@ -3,29 +3,46 @@
 Snowbeam is a local terminal tool for Snowflake connections and individual agent
 access. Keep changes bounded and preserve its authentication and storage boundaries.
 
-## Development
+## Fast local iteration
 
 Use Python 3.11 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```sh
-uv sync --frozen
-uv run snowbeam --demo
-uv run ruff check src tests tools
-uv run ruff format --check src tests tools
-uv run pytest -q
-uv build
-uv run twine check --strict dist/*.whl dist/*.tar.gz
-uv run python tools/check_release.py dist
+make setup
+make dev
 ```
 
-The package check installs the wheel and source archive in separate temporary
-environments, outside the checkout, then checks metadata, CLI output, demo data,
-and the terminal UI. It downloads declared dependencies when necessary. It does
-not read real Snowflake configuration or connect to providers.
+Run these commands from the Snowbeam checkout. `make dev` runs the current source
+in the project's editable uv environment. Edit the source, return to the demo,
+press Escape to close any form, then `q` to quit. Press Enter at the terminal
+prompt to restart with your edits; type `q` there to finish the loop. Python and
+embedded CSS changes take effect on restart. There is no automatic reload.
 
-Regenerate screenshots with `uv run python tools/capture_demo.py` after visible
-UI changes. All documentation captures must use synthetic data. Preserve the
-approved pixel logo and its original source artwork.
+Each launch starts with fresh synthetic connections, identities, aliases, and
+notes. Demo edits disappear on exit. It does not read your Snowflake configuration
+or contact Snowflake or vault providers. The Homebrew-installed `snowbeam` remains
+the published version; use `make dev` or `make demo` to see your local edits.
+No version bump, build, reinstall, or release is needed for this loop.
+
+`make demo` runs once. In the demo, press `a` for the blank Add form and its
+**Clone from** invitation, or Shift+`c` to clone the selected connection. These
+cloning controls are in the working source for the next release.
+
+During an adjustment, run the relevant tests:
+
+```sh
+make test TESTS="tests/test_tui.py -k clone"
+make test TESTS="tests/test_config.py tests/test_inventory.py"
+```
+
+When a batch is ready, run `make check` for lint, formatting, and the full suite.
+Use `make screenshots` after a visible UI batch. Documentation captures use
+synthetic data; preserve the approved pixel logo and its original source artwork.
+Commit coherent batches while iterating. Publish a version when the owner asks
+to release the batch, following the [release checklist](docs/releasing.md).
+
+Without Make, use `uv sync --frozen`, `uv run --frozen snowbeam --demo`,
+`uv run --frozen pytest -q`, and the Ruff commands in the release checklist.
 
 ## Changes and bug reports
 

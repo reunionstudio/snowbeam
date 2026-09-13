@@ -2,7 +2,7 @@
 
 Snowbeam is a terminal application. The first Mac distribution uses Homebrew;
 Python and the app's dependencies are managed for you. Snowbeam is alpha software;
-see the [release notes](releases/0.2.0a4.md) for validation limits.
+see the [release notes](releases/0.2.0a3.md) for validation limits.
 
 ## Install a release wheel
 
@@ -10,7 +10,7 @@ Download the wheel and checksums from [GitHub releases](https://github.com/reuni
 With [uv](https://docs.astral.sh/uv/getting-started/installation/) installed:
 
 ```sh
-uv tool install ./snowbeam-0.2.0a4-py3-none-any.whl
+uv tool install ./snowbeam-0.2.0a3-py3-none-any.whl
 snowbeam --version
 snowbeam --demo
 ```

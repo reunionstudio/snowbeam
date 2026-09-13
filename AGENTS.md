@@ -26,6 +26,12 @@ Keep this a local Snowflake connection, consultant identity, and agent access to
 - Keep Linux and macOS supported with Python 3.11 or newer. Test paths must be
   isolated; never run tests against a contributor's real Snowflake config.
 
+For UI iteration, run the working source with `make dev` or `make demo` and
+synthetic data. Use focused tests while adjusting, then the full checks below
+when the batch is ready. Do not bump versions, build distribution archives,
+publish releases, update the tap/website, or upgrade the installed app for each
+adjustment. Release the accumulated batch when the user asks for a release.
+
 Before finalizing code changes, run `uv run ruff check src tests tools`,
 `uv run ruff format --check src tests tools`, and `uv run pytest -q`.
 Run `uv build` after packaging changes. Regenerate demo screenshots with

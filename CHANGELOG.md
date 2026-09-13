@@ -3,7 +3,7 @@
 Versions follow Python package versioning. Pre-release tags match package versions
 with a `v` prefix. This file records user-visible changes and known limitations.
 
-## 0.2.0a4 — 2026-09-13
+## 0.2.0a4 — Unreleased
 
 - Offer **Clone from** at the top of the blank Add connection form. Selecting a
   source fills its editable settings and suggests an available name.

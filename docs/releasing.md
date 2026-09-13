@@ -6,8 +6,13 @@ AUR are not required for these routes.
 
 ## Prepare a release
 
+Iterate locally with `make dev` and focused tests first. Batch the changes into
+one release when the owner asks to publish; ordinary UI adjustments do not need
+a version bump or package installation. Run `make check` at the end of a batch.
+
 Update `pyproject.toml` with `uv version`, refresh `uv.lock`, and update the
-changelog, release notes, and versioned installation examples. Use Python version
+changelog and release notes. Keep public installation examples on the latest
+published version until the new downloads are verified. Use Python version
 syntax, such as `0.2.0a1`, with matching tag `v0.2.0a1`. Keep alpha status and
 unvalidated integrations explicit. Never replace a published version or asset.
 
@@ -30,6 +35,10 @@ The package check installs the wheel and source archive independently outside th
 checkout, checks the version and icons, and runs the synthetic inventory and
 terminal UI. Only successful checks write `dist/SHA256SUMS`. The formula is
 generated from that exact source archive and locked runtime dependencies.
+
+If more changes land after a draft is built, rebuild and repeat package checks
+from the final commit before publishing. A draft's older artifacts are not a
+validated build of subsequent changes.
 
 ## Publish the checked artifacts
 
