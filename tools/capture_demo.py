@@ -20,10 +20,16 @@ async def capture() -> None:
         async with app.run_test(size=(124, 36)) as pilot:
             await pilot.pause()
             app.save_screenshot("snowbeam.svg", path=str(output))
+            app.query_one(TabbedContent).active = "identities-tab"
+            await pilot.pause()
+            app.save_screenshot("identities.svg", path=str(output))
             app.query_one(TabbedContent).active = "attention-tab"
             await pilot.pause()
             app.save_screenshot("attention.svg", path=str(output))
-    for name in ("snowbeam.svg", "attention.svg"):
+            app.action_updates()
+            await pilot.pause()
+            app.save_screenshot("updates.svg", path=str(output))
+    for name in ("snowbeam.svg", "identities.svg", "attention.svg", "updates.svg"):
         path = output / name
         path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
 

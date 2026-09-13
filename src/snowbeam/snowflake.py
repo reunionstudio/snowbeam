@@ -51,6 +51,12 @@ def parse_rows(output: str) -> list[dict]:
 def safe_error(output: str) -> SnowError:
     """Classify errors without displaying raw output, which may contain credentials."""
     lowered = output.lower()
+    if "snowbeam account or identity mismatch" in lowered:
+        return SnowError(
+            "wrong_target",
+            "The connection resolved to a different account or identity. No guarded "
+            "operation was executed.",
+        )
     if "network policy" in lowered or "not allowed to access snowflake" in lowered:
         return SnowError(
             "network_policy", "Snowflake blocked this network under its access policy."
@@ -59,10 +65,12 @@ def safe_error(output: str) -> SnowError:
         word in lowered for word in ("token", "password", "credential")
     ):
         return SnowError("expired", "Snowflake reports an expired credential. Sign in another way.")
+    if "already exists" in lowered:
+        return SnowError("object_exists", "The named Snowflake object already exists.")
     if any(
         word in lowered for word in ("insufficient privileges", "not authorized", "access denied")
     ):
-        return SnowError("permission", "The current role cannot inspect this metadata.")
+        return SnowError("permission", "The current role lacks permission for this operation.")
     if "unable to configure handler" in lowered:
         return SnowError(
             "cli_config", "Snowflake CLI cannot open its log file. Check CLI configuration."
@@ -105,7 +113,9 @@ class SnowClient:
             "JSON",
             "--silent",
         ]
-        environment = os.environ.copy()
+        environment = (
+            dict(profile.environment) if profile.environment is not None else os.environ.copy()
+        )
         # The connector independently locates connections.toml via SNOWFLAKE_HOME.
         # Keep it alongside the selected config, including on older CLI releases.
         environment["SNOWFLAKE_HOME"] = str(profile.config_path.parent)
@@ -132,6 +142,36 @@ class SnowClient:
         if result.returncode:
             raise safe_error(result.stderr + result.stdout)
         return result.stdout
+
+    def secure_output(self, profile: Profile, sql: str, *, interactive: bool = True) -> str:
+        import tempfile
+        from pathlib import Path
+
+        import tomlkit
+
+        from .config import atomic_write, read_document
+
+        document = read_document(profile.source_path)
+        entries = (
+            document
+            if profile.source_path != profile.config_path
+            else document.get("connections", {})
+        )
+        if profile.name not in entries:
+            raise SnowError("configuration", "The selected provisioning connection is unavailable.")
+        raw = dict(entries[profile.name])
+        # Preserve authentication details only in a short-lived private file; never
+        # copy them into Profile.settings, a plan, cache, or exported result.
+        with tempfile.TemporaryDirectory(prefix="snowbeam-admin-") as directory:
+            path = Path(directory) / "config.toml"
+            atomic_write(
+                path,
+                tomlkit.dumps({"connections": {profile.name: raw}, "logs": {"save_logs": False}}),
+            )
+            scoped = Profile(
+                profile.name, path, path, profile.settings, environment=profile.environment
+            )
+            return self._output(scoped, sql, interactive=interactive)
 
     def query(self, profile: Profile, sql: str, *, interactive: bool = True) -> list[dict]:
         return parse_rows(self._output(profile, sql, interactive=interactive))

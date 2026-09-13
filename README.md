@@ -1,227 +1,140 @@
 # Snowbeam
 
-Your way into Snowflake.
+<img src="https://reunionstudio.io/assets/snowbeam/logo-256.png" alt="Snowbeam pixel logo: a person in a transporter beam dissolving into snow" width="96" height="96">
 
-Snowbeam is a small terminal app for Linux and macOS. Manage local Snowflake
-connection profiles, keep a map of your organizations and accounts, and see
-programmatic access token (PAT) expirations before they interrupt your work.
+**Your way into Snowflake.**
 
-Independent of Airlock. Open source. MIT licensed.
+Manage many Snowflake connections for many agents, across organizations and
+accounts. Snowbeam is a local terminal app built first for
+[Omarchy](https://omarchy.org/manual/), with Linux and macOS support.
 
-![Snowbeam connection inventory with synthetic demo data](docs/snowbeam.svg)
+Give each autonomous agent its own identity and only the access its job needs.
+Keep client accounts separate, inspect policy evidence, and manage individual
+credentials through reviewed plans. Snowflake enforces access; 1Password or
+Bitwarden holds managed tokens and private keys; your chosen runtime runs the
+agent. Snowbeam works independently of Airlock.
 
-## Try it
+**Alpha: `0.2.0a1`.** Source and versioned downloads are available through
+[GitHub releases](https://github.com/reunionstudio/snowbeam/releases). Live Snowflake provisioning, vault writes, cloud
+workload authentication, and Omarchy desktop validation remain pending. See the
+[alpha release notes](https://github.com/reunionstudio/snowbeam/blob/main/docs/releases/0.2.0a1.md).
 
-Requires Python 3.11 or newer and [uv](https://docs.astral.sh/uv/getting-started/installation/).
+![Snowbeam identity inventory with synthetic data](https://reunionstudio.io/assets/snowbeam/identities.png)
+
+## Install and try the demo
+
+On macOS, with [Homebrew](https://brew.sh/) installed:
 
 ```sh
-git clone https://github.com/reunionstudio/snowbeam.git
-cd snowbeam
-uv sync --frozen
-uv run snowbeam --demo
+brew install reunionstudio/tap/snowbeam
+snowbeam --version
+snowbeam --demo
 ```
+
+Homebrew manages Python and the app's dependencies. See the
+[macOS guide](docs/macos.md) for installation and **Update and restart**.
+
+On Omarchy or another Linux desktop, with
+[uv](https://docs.astral.sh/uv/getting-started/installation/) installed:
+
+```sh
+uv tool install https://github.com/reunionstudio/snowbeam/releases/download/v0.2.0a1/snowbeam-0.2.0a1-py3-none-any.whl
+snowbeam --version
+snowbeam --demo
+```
+
+No checkout or build step is needed. uv manages an isolated environment and can
+provision Python 3.11 or newer. After quitting the demo, `snowbeam desktop install`
+adds the pixel icon and terminal launcher on Linux. See the
+[Omarchy and Linux guide](docs/omarchy.md), including first-time uv setup.
 
 The demo uses temporary, synthetic data. It does not read your Snowflake
-configuration, connect to Snowflake, or enable desktop reminders.
+configuration, connect to Snowflake, or enable desktop reminders. Press `q` to quit.
+If uv reports that its executable directory is missing from `PATH`, run
+`uv tool update-shell` and reopen your terminal.
 
-For a persistent command available from any directory:
+The Homebrew formula uses checksummed sources and locked runtime dependencies.
+No Snowbeam package is published to PyPI or AUR, and no macOS DMG is provided.
+Downloads and `SHA256SUMS` are on the
+[alpha release](https://github.com/reunionstudio/snowbeam/releases/tag/v0.2.0a1).
+
+## Connect to your inventory
+
+Live checks require [Snowflake CLI](https://docs.snowflake.com/en/developer-guide/snowflake-cli/index)
+as the `snow` command. Install it separately and configure your connections using
+Snowflake CLI's authentication guidance. Vault-backed workflows also require the
+chosen provider's CLI and authorization.
 
 ```sh
-uv tool install .
 uv tool install snowflake-cli
-snowbeam
-```
-
-The GitHub repository is private. Snowbeam has not been released on PyPI.
-Snowflake CLI must be available as `snow` for live refreshes. Offline inventory
-and the demo work without it. You can select another executable with
-`--snow-executable /absolute/path/to/snow`.
-
-## Use it
-
-The left tree filters the inventory by organization or account. Connections,
-Tokens, and Attention have separate tabs. Use the mouse or Tab and arrow keys.
-A terminal of 120 columns is comfortable; 80 × 24 works with scrolling.
-
-| Key or control | Action |
-| --- | --- |
-| `a` / Add | Add a local connection profile |
-| `e` / Edit | Edit the selected connection's settings |
-| Default | Make the selected profile the Snowflake CLI default |
-| Remove | Confirm removal of a local profile |
-| `t` | Test the selected connection and refresh its current user's PAT inventory |
-| `r` / Refresh all | Refresh every configured connection |
-| `b` | Associate a listed PAT with the selected connection |
-| `o` | Refresh the selected connection and discover organization accounts |
-| `c` | Copy the verified organization-account identifier |
-| `q` | Quit |
-
-New profiles default to browser SSO. The editor also supports PAT and key-pair
-authentication through credential **file paths**. Create and rotate credentials
-with Snowflake's own tools, then point the connection at them. Existing password
-and other authentication settings are preserved, but Snowbeam does not offer
-password input. A login needing a terminal prompt should be completed with
-Snowflake CLI first; browser SSO can open your browser during a manual refresh.
-
-The app automatically refreshes PAT and key-pair connections on startup and
-hourly while open. Browser sign-in requires an explicit refresh. For cached
-inventory without automatic network activity, run:
-
-```sh
 snowbeam tui --offline
 ```
 
-Expiry countdowns update locally every minute. A failed refresh retains the
-last successful metadata and displays the failure. Checks older than 24 hours
-are flagged as stale. An empty or unverified inventory is never reported as
-proof that all tokens are safe.
+Offline mode lets you inspect cached inventory without automatic refreshes.
+Running `snowbeam` normally refreshes eligible connections when due, hourly by
+default. Per-connection intervals and failure backoff persist in local state.
+Browser sign-in requires an explicit refresh. Creating,
+rotating, or revoking a managed credential requires a reviewed plan and apply.
 
-![Snowbeam token attention view with synthetic demo data](docs/attention.svg)
+## Upgrade or uninstall
 
-## What the inventory means
+Open **Updates** (`u`) for available versions and installation-specific upgrade
+instructions. Checks are manual by default; optionally enable daily checks while
+the app is open. An official Homebrew installation offers **Update and restart**:
+click it to install through Homebrew, see progress, and reopen the updated app.
+Active Snowflake work must finish first. If installation fails, Snowbeam stays open
+and lets you retry. Release checks never install updates without that click.
+Manual Homebrew upgrades remain available through `brew update` followed by
+`brew upgrade reunionstudio/tap/snowbeam` with Snowbeam closed.
 
-A successful refresh records the authenticated organization, account name,
-account locator, region, user, role, and warehouse. Snowbeam groups profiles
-that resolve to the same account and retains known accounts locally.
-
-PAT inspection covers the **current user of each configured connection**. It
-is not an inventory of every user's tokens. The metadata command supplies names,
-status, expiration, and role restrictions, not token values. Snowbeam cannot
-infer which opaque token a profile uses: `b` records an explicit association.
-See Snowflake's [PAT metadata reference](https://docs.snowflake.com/en/sql-reference/sql/show-user-programmatic-access-tokens).
-
-Organization discovery is optional and subject to the current role's
-privileges. It adds known accounts; it does not create connection profiles or
-inspect users in those accounts. A denied discovery does not erase earlier
-results. See Snowflake's [SHOW ACCOUNTS reference](https://docs.snowflake.com/en/sql-reference/sql/show-accounts).
-
-Snowbeam does not create, rotate, revoke, or renew PATs. An expired PAT can
-prevent refreshing its own inventory; use a working connection for the same
-account and user to inspect it again. Local profile removal does not revoke a
-credential or erase cached expiration records.
-
-## Configuration and local storage
-
-Snowbeam follows Snowflake CLI's configuration discovery: `SNOWFLAKE_HOME`,
-then an existing `~/.snowflake` directory, then the platform's Snowflake config
-directory. An adjacent `connections.toml` takes precedence over connection
-tables in `config.toml`. Select an explicit file with:
+For a Linux uv installation, quit Snowbeam and reinstall using the new release's
+wheel URL:
 
 ```sh
-snowbeam --snow-config /path/to/config.toml
+uv tool install --reinstall https://github.com/reunionstudio/snowbeam/releases/download/vNEW_VERSION/snowbeam-NEW_VERSION-py3-none-any.whl
+snowbeam --version
 ```
 
-Edits preserve comments and fields outside the editor. Each changed TOML file
-gets a private `.snowbeam.bak` snapshot of its previous contents. Writes are
-atomic, use mode `0600`, and reject symlinks and detected concurrent edits.
-Environment overrides are reflected in inventory but are not changed by the
-editor. Snowflake CLI's [configuration guide](https://docs.snowflake.com/en/developer-guide/snowflake-cli/connecting/configure-cli)
-describes the underlying format and environment variables.
+Replace `NEW_VERSION` with the chosen release. The Linux Updates panel announces
+releases; the in-app installer currently supports Homebrew only. Reinstall optional
+source/wheel launchers or reminders after an
+upgrade so they refer to the current environment. New Homebrew reminders use a
+stable path that follows package upgrades.
 
-The metadata cache is `inventory.sqlite3` under:
-
-- Linux: `$XDG_DATA_HOME/snowbeam`, normally `~/.local/share/snowbeam`.
-- macOS: `~/Library/Application Support/snowbeam`.
-- Either platform: a directory selected with `--state-dir /path/to/directory`.
-
-The database stores account identifiers, usernames, selected connection
-settings and credential paths, PAT metadata, check timestamps, and reminder
-history. It does not store token values, passwords, or private keys. Existing
-secrets remain in the original Snowflake configuration **and its backup** when
-present. Snowflake CLI handles authentication and has its own logging settings.
-The cache is private to the filesystem user, not encrypted. JSON exports also
-contain identifiers and usernames.
-
-There is no Snowbeam server, telemetry, or remote sync. Live checks run fixed
-metadata SQL through the installed Snowflake CLI. Snowbeam does not query
-business tables or change Snowflake objects.
-
-## Linux and Omarchy
-
-After a persistent installation, add Snowbeam to your application launcher:
+If you enabled reminders, remove them before uninstalling:
 
 ```sh
-snowbeam desktop install
-```
-
-This writes a standard `snowbeam.desktop` entry with `Terminal=true`. The desktop
-must support launching terminal applications. No Omarchy configuration is
-replaced. The launcher depends on the installed Python environment remaining in
-place; reinstall it after moving or reinstalling Snowbeam.
-
-## Optional desktop reminders
-
-```sh
-snowbeam reminders install
 snowbeam reminders remove
 ```
 
-Installation **enables** a per-user job: daily around 09:00 on Linux with systemd,
-or hourly on macOS with launchd. It refreshes PAT/key-pair connections without
-interactive sign-in, then checks cached expirations. It does not open SSO browser
-windows. A scheduler's environment may lack credentials or variables exported
-only in your shell; those refreshes remain visibly unverified.
-
-Reminders are deduplicated at 14, 7, 3, and 1 day remaining, then at expiration.
-Disabled tokens, unknown expirations, and verification gaps also need attention.
-These are best-effort local reminders while your user session can run jobs;
-they are not a hosted monitoring service. Linux needs `notify-send` and a desktop
-notification service. macOS uses `osascript`; notification delivery also depends
-on macOS settings. Reinstall the job after moving the Python environment.
-
-## CLI and JSON
-
-Global options go before the command. These commands use the same config and
-cache as the terminal app:
+Then uninstall using the method you installed with:
 
 ```sh
-snowbeam connections list --json
-snowbeam connections add work --account MYORG-MYACCOUNT --user ME
-snowbeam connections edit work --role ANALYST --warehouse COMPUTE_WH
-snowbeam connections default work
-snowbeam refresh work
-snowbeam refresh work --organization
-snowbeam connections bind-token work MY_PAT_NAME
-snowbeam inventory --json
-snowbeam tokens --json
-snowbeam check --json
-snowbeam check --refresh --notify
-snowbeam connections remove work --yes
+brew uninstall reunionstudio/tap/snowbeam
 ```
 
-Pass an empty string to clear an editable setting or a PAT association.
-`check` uses cached data unless `--refresh` is supplied. Exit codes:
-
-| Code | Meaning |
-| --- | --- |
-| `0` | No alerts or verification issues within the configured scope |
-| `1` | Token attention is due |
-| `2` | Verification is incomplete or a command failed; alerts may also be present |
-
-`--days` changes the check's upcoming-expiration window, which defaults to 14.
-`refresh --non-interactive` skips interactive authentication. Inspect
-`verification_issues` alongside `alerts` in JSON output.
-
-## Development
+Or, for a uv installation:
 
 ```sh
-uv sync --frozen
-uv run ruff check src tests tools
-uv run ruff format --check src tests tools
-uv run pytest -q
-uv build
-uv run python tools/capture_demo.py
+uv tool uninstall snowbeam
 ```
 
-Tests cover config precedence and safe editing, metadata-only persistence,
-account deduplication, stale/failed checks, expiry boundaries, token association,
-CLI errors, notification deduplication, scheduler files, and terminal interaction.
-All test data is synthetic; tests do not read local credentials or connect to Snowflake.
+Uninstalling the package preserves your Snowflake configuration and local
+inventory. Linux users who installed the optional launcher can remove
+`snowbeam.desktop` from their user applications directory and `snowbeam.png`
+from their user `icons/hicolor/512x512/apps` directory. The
+[user guide](https://github.com/reunionstudio/snowbeam/blob/main/docs/user-guide.md)
+describes configuration, storage paths, launchers, and reminders.
 
-The [GitHub Actions template](docs/github-actions-ci.yml) checks Linux and macOS
-with Python 3.11 and 3.13. To enable it, copy it to `.github/workflows/ci.yml`
-and push using GitHub authorization with the `workflow` permission. It is kept
-as a template because the current publishing credentials do not have that permission.
+## Read more
 
-Initial validation used Snowflake CLI 3.17.1 for command/config compatibility.
-Live Snowflake authentication and a real Omarchy desktop remain to be validated.
+- [User guide](https://github.com/reunionstudio/snowbeam/blob/main/docs/user-guide.md): terminal controls, inventory, configuration, CLI commands, and desktop integration.
+- [Identity and security guide](https://github.com/reunionstudio/snowbeam/blob/main/docs/security.md): vaults, plan/apply, runtime handoff, rotation, and recovery.
+- [Changelog](https://github.com/reunionstudio/snowbeam/blob/main/CHANGELOG.md) and [release preparation](https://github.com/reunionstudio/snowbeam/blob/main/docs/releasing.md).
+- [Contributing](https://github.com/reunionstudio/snowbeam/blob/main/CONTRIBUTING.md) and [reporting a security issue](https://github.com/reunionstudio/snowbeam/blob/main/SECURITY.md).
+
+The alpha has local tests and package-installation checks. GitHub Actions are
+[setup templates](docs/github-actions/README.md) until workflow authorization is
+available; hosted Linux CI and live Omarchy testing remain pending.
+
+MIT licensed. Made by [Reunion Studio](https://reunionstudio.io/).

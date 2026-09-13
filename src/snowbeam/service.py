@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .config import Config, Profile
+from .preferences import Preferences
 from .snowflake import SnowClient, SnowError
 from .store import Store, stale
 
@@ -21,6 +22,10 @@ class Service:
         self.store = store
         self.client = client or SnowClient()
         self.demo = False
+        self.preferences = Preferences(store.directory)
+        from .fleet_service import FleetService
+
+        self.fleet = FleetService(self)
 
     def import_profiles(self) -> list[Profile]:
         profiles = self.config.profiles()
@@ -28,7 +33,12 @@ class Service:
         return profiles
 
     def refresh(
-        self, name: str | None = None, *, interactive: bool = True, organization: bool = False
+        self,
+        name: str | None = None,
+        *,
+        interactive: bool = True,
+        organization: bool = False,
+        scheduled: bool = False,
     ) -> RefreshResult:
         profiles = self.import_profiles()
         if name:
@@ -36,46 +46,70 @@ class Service:
         result = RefreshResult()
         queried_orgs = set()
         for profile in profiles:
+            minutes = self.preferences.refresh_minutes(profile.key)
+            if scheduled and not self.store.refresh_due(profile.key, minutes):
+                continue
             if not interactive and not profile.background_safe:
                 result.issues.append(
                     f"{profile.name}: interactive sign-in required; cached data retained."
                 )
                 continue
+            previous_issues = len(result.issues)
+            completed = False
             try:
-                identity, rows = self.client.snapshot(profile, interactive=interactive)
-                account_id = self.store.connected(profile, identity)
-            except SnowError as exc:
-                if exc.code == "permission":
-                    # A PAT inspection failure does not establish a broken login.
-                    # Verify identity alone, but never combine tokens from another session.
-                    try:
-                        identity = self.client.identity(profile, interactive=interactive)
-                        account_id = self.store.connected(profile, identity)
-                    except SnowError as identity_error:
-                        self.store.failed(profile, identity_error.code, str(identity_error))
-                        result.issues.append(f"{profile.name}: {identity_error}")
-                        continue
-                    result.refreshed += 1
-                    self.store.tokens_failed(
-                        account_id, str(identity["user_name"]), exc.code, str(exc)
-                    )
-                    result.issues.append(f"{profile.name}: PAT inventory: {exc}")
-                    continue
-                self.store.failed(profile, exc.code, str(exc))
-                result.issues.append(f"{profile.name}: {exc}")
-                continue
-            result.refreshed += 1
-            user = str(identity["user_name"])
-            self.store.save_tokens(account_id, user, rows)
-            org = str(identity["organization_name"])
-            if organization and org not in queried_orgs:
                 try:
-                    rows = self.client.accounts(profile, interactive=interactive)
-                    self.store.save_accounts(org, rows)
-                    queried_orgs.add(org)
-                except (SnowError, ValueError) as exc:
-                    result.issues.append(f"{profile.name}: organization discovery: {exc}")
+                    with self.fleet.session_for(profile, interactive=interactive) as actual:
+                        identity, rows = self.client.snapshot(actual, interactive=interactive)
+                    account_id = self.store.connected(profile, identity)
+                except SnowError as exc:
+                    if exc.code == "permission":
+                        # A PAT inspection failure does not establish a broken login.
+                        # Verify identity alone, but never combine tokens from another session.
+                        try:
+                            with self.fleet.session_for(profile, interactive=interactive) as actual:
+                                identity = self.client.identity(actual, interactive=interactive)
+                            account_id = self.store.connected(profile, identity)
+                        except SnowError as identity_error:
+                            self.store.failed(profile, identity_error.code, str(identity_error))
+                            result.issues.append(f"{profile.name}: {identity_error}")
+                            continue
+                        result.refreshed += 1
+                        self.store.tokens_failed(
+                            account_id, str(identity["user_name"]), exc.code, str(exc)
+                        )
+                        result.issues.append(f"{profile.name}: PAT inventory: {exc}")
+                        continue
+                    self.store.failed(profile, exc.code, str(exc))
+                    result.issues.append(f"{profile.name}: {exc}")
+                    continue
+                result.refreshed += 1
+                user = str(identity["user_name"])
+                self.store.save_tokens(account_id, user, rows)
+                org = str(identity["organization_name"])
+                if organization and org not in queried_orgs:
+                    try:
+                        with self.fleet.session_for(profile, interactive=interactive) as actual:
+                            rows = self.client.accounts(actual, interactive=interactive)
+                        self.store.save_accounts(org, rows)
+                        queried_orgs.add(org)
+                    except (SnowError, ValueError) as exc:
+                        result.issues.append(f"{profile.name}: organization discovery: {exc}")
+                completed = True
+            finally:
+                self.store.record_refresh(
+                    profile.key,
+                    minutes,
+                    failed=not completed or len(result.issues) > previous_issues,
+                )
         return result
+
+    def refresh_due(self) -> bool:
+        # Import first so a changed target loses its previous verification and schedule.
+        return any(
+            profile.background_safe
+            and self.store.refresh_due(profile.key, self.preferences.refresh_minutes(profile.key))
+            for profile in self.import_profiles()
+        )
 
     def coverage_issues(self) -> list[str]:
         """An empty alert list must never imply an inventory we have not inspected."""

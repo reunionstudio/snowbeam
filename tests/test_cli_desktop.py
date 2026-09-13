@@ -3,6 +3,8 @@ import plistlib
 import subprocess
 import sys
 from datetime import timedelta
+from importlib.resources import files
+from pathlib import Path
 
 from conftest import IDENTITY, TOKEN
 
@@ -15,10 +17,10 @@ def test_demo_is_isolated_and_exits_with_alert_status(tmp_path, monkeypatch, cap
     user_config = tmp_path / "config.toml"
     user_config.write_text("# Deliberately broken TOML [SECRET")
     monkeypatch.setenv("SNOWFLAKE_HOME", str(tmp_path))
-    assert main(["--demo", "check", "--json"]) == 1
+    assert main(["--demo", "check", "--json"]) == 2
     result = json.loads(capsys.readouterr().out)
     assert len(result["alerts"]) == 2
-    assert result["verification_issues"] == []
+    assert any("reporter" in issue for issue in result["verification_issues"])
     assert user_config.read_text() == "# Deliberately broken TOML [SECRET"
 
 
@@ -79,6 +81,11 @@ def test_scheduler_files_are_opt_in_and_paths_are_quoted(service, monkeypatch, t
     launcher = install_launcher(service)
     assert "Terminal=true" in launcher.read_text()
     assert "--state-dir" in launcher.read_text()
+    icon_line = next(line for line in launcher.read_text().splitlines() if line.startswith("Icon="))
+    icon = Path(icon_line.removeprefix("Icon="))
+    assert icon.is_file()
+    assert icon.read_bytes() == files("snowbeam").joinpath("assets/snowbeam-512.png").read_bytes()
+    assert icon.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
     paths = install_reminders(service)
     assert '"check" "--refresh" "--notify"' in paths[0].read_text()
     assert "Persistent=true" in paths[1].read_text()

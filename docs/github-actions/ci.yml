@@ -1,0 +1,40 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  homebrew:
+    uses: ./.github/workflows/homebrew.yml
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ['3.11', '3.13', '3.14']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.11.2'
+          python-version: ${{ matrix.python }}
+      - run: uv sync --frozen
+      - run: uv run ruff check src tests tools
+      - run: uv run ruff format --check src tests tools
+      - run: uv run pytest -q
+      - run: uv build
+      - run: uv run twine check --strict dist/*.whl dist/*.tar.gz
+      - run: uv run python tools/check_release.py dist
+      - run: uv run python tools/homebrew_formula.py dist
+      - run: ruby -c dist/homebrew/snowbeam.rb

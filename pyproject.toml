@@ -1,22 +1,51 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling==1.32.0"]
 build-backend = "hatchling.build"
 
 [project]
 name = "snowbeam"
-version = "0.1.0"
-description = "Your Snowflake accounts, connections, and token expirations. In one place."
+version = "0.2.0a1"
+description = "Snowflake connections, consultant identities, and individual AI agent access."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{name = "Reunion Studio"}]
-dependencies = ["textual>=6.12,<7", "tomlkit>=0.13,<1", "platformdirs>=4,<5"]
+keywords = ["snowflake", "terminal", "identity", "agents", "credentials"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Operating System :: MacOS",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+dependencies = ["textual>=6.12,<7", "tomlkit>=0.13,<1", "platformdirs>=4,<5", "packaging>=24"]
+
+[project.urls]
+Homepage = "https://reunionstudio.io/snowbeam.html"
+Documentation = "https://github.com/reunionstudio/snowbeam/blob/main/docs/user-guide.md"
+Repository = "https://github.com/reunionstudio/snowbeam"
+Issues = "https://github.com/reunionstudio/snowbeam/issues"
+Changelog = "https://github.com/reunionstudio/snowbeam/blob/main/CHANGELOG.md"
 
 [project.scripts]
 snowbeam = "snowbeam.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "ruff>=0.11,<1", "build>=1,<2"]
+dev = ["pytest>=8,<10", "pytest-asyncio>=0.24,<2", "ruff>=0.11,<1", "build>=1,<2", "packaging>=24", "twine>=7,<8"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src", "/tests", "/tools/*.py", "/docs/*.md", "/docs/*.svg", "/docs/releases", "/docs/github-actions",
+  "/README.md", "/LICENSE", "/CHANGELOG.md", "/CONTRIBUTING.md", "/SECURITY.md",
+  "/pyproject.toml", "/uv.lock",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

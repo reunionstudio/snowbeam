@@ -8,11 +8,13 @@ import plistlib
 import shutil
 import subprocess
 import sys
+from importlib.resources import files
 from pathlib import Path
 
 from platformdirs import user_data_path
 
 from .config import atomic_write
+from .installation import homebrew_command
 from .service import Service
 from .snowflake import safe_text
 from .store import Store, utcnow
@@ -79,10 +81,9 @@ def notify_due(store: Store, alerts: list[dict], coverage: list[str]) -> tuple[i
 
 
 def program_args(service: Service) -> list[str]:
-    result = [
-        sys.executable,
-        "-m",
-        "snowbeam",
+    # Homebrew's opt path survives version changes and cleanup of old kegs.
+    command = homebrew_command()
+    result = ([str(command)] if command else [sys.executable, "-m", "snowbeam"]) + [
         "--state-dir",
         str(service.store.directory.absolute()),
         "--snow-config",
@@ -115,12 +116,16 @@ def install_launcher(service: Service) -> Path:
         )
     directory = user_data_path(appauthor=False) / "applications"
     path = directory / "snowbeam.desktop"
+    icon = directory.parent / "icons/hicolor/512x512/apps/snowbeam.png"
+    atomic_write(icon, files("snowbeam").joinpath("assets/snowbeam-512.png").read_bytes())
+    icon_value = str(icon).replace("\\", "\\\\")
     atomic_write(
         path,
         "[Desktop Entry]\nType=Application\nName=Snowbeam\n"
-        "Comment=Snowflake accounts, connections, and token expirations\n"
+        "Comment=Snowflake connections and individual agent access\n"
         f"Exec={quoted_exec(program_args(service))}\nTerminal=true\n"
-        "Icon=network-server\nCategories=Development;Utility;\nKeywords=Snowflake;PAT;Connections;\n",
+        f"Icon={icon_value}\nCategories=Development;Utility;\n"
+        "Keywords=Snowflake;PAT;Connections;Agents;\n",
     )
     return path
 

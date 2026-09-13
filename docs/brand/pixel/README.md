@@ -1,0 +1,17 @@
+# Snowbeam pixel logo
+
+![Snowbeam pixel logo](snowbeam-pixel.png)
+
+Generated on 2026-09-12 with the built-in image-generation tool. The final PNG is the unmodified generated source. The person, transporter beam, dissolving pixels, and snowflakes were generated together; no shapes or lettering were added afterward. This source PNG has no post-processing. Bundled launcher exports under `src/snowbeam/assets` use nearest-neighbor resizing only; their design is unchanged.
+
+The final image was visually inspected for the standing figure, beam, three snowflakes, and clean stepped contours. The pixel-grid dimensions and palette below are art-direction targets, not claims of a mechanically exact grid or indexed palette.
+
+This is the default Snowbeam logo used by the launcher and main README. The earlier vector and animation study remains archived in the parent directory. See [the branding guide](../README.md) for exports and rebuild commands.
+
+## Initial generation prompt
+
+Use case: logo-brand. Create one original pixel-art app logo for Snowbeam, a terminal app built first for Omarchy. Start from scratch; this is a new logo, not a rendering of an earlier design. Square composition, just the symbol, no text. A simple recognizable standing human silhouette is being transported in a vertical icy-cyan beam. The top of the person is intact, while a few pixel fragments from the lower body become three small snowflake shapes drifting downward. Combine the person, beam, and snow into one bold compact emblem, instantly legible at app-icon size. Pixel art visual contract: deliberate 64-by-64 logical pixel grid enlarged cleanly, square pixels of uniform size, clean stepped contours, extremely economical detail, 5 or 6 flat colors only: near-black navy background, deep teal, mid blue, icy cyan, pale ice, snow white. Upright faceless figure with a square head, simple torso, two arms and two legs; neutral proportions, no helmet, no equipment, no franchise insignia. Beam is a simple tapered column with a narrow pixel cap and a small flat base. A quiet dark navy square background and generous empty margin around the emblem. Professional retro-computer identity, understated and distinctive. No soft gradients, no glow blur, no antialiasing look, no 3D, no mockup, no lettering, no extra decorative stars, no busy environment. Make the complete concept native to the generated pixel artwork.
+
+## Refinement prompt
+
+Refine this Snowbeam logo into true, extremely crisp low-resolution pixel art. Keep the SAME concept: a faceless upright person inside a cyan transporter beam, feet dissolving into square particles, with three snowflakes below. The whole logo must look hand-placed on a strict 48 by 48 logical pixel canvas, enlarged using nearest-neighbor only: every pixel is the SAME large square size, all edges snap to that coarse grid. Make the person larger and the beam a little wider so the symbol reads clearly at 48 pixels. Use ONLY five solid colors: deep navy, deep blue, cyan, pale cyan, and white. Completely remove all gradients, brush texture, glow, edge noise, tiny slivers, and antialiasing. A flat deep navy square background. Generous margin. One centered compact app icon, no words, no extra objects, no mockup. Preserve the simple standing human anatomy with two arms and two legs, one square head; native pixel snowflakes with simple plus-and-diagonal branches. Regenerate the complete artwork with this consistent pixel construction, not a filter applied to a smooth illustration.

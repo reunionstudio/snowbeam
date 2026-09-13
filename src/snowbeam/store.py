@@ -70,7 +70,25 @@ CREATE TABLE IF NOT EXISTS notices (key TEXT PRIMARY KEY, sent_at TEXT NOT NULL)
 CREATE TABLE IF NOT EXISTS org_checks (
     organization TEXT PRIMARY KEY, checked_at TEXT NOT NULL, account_count INTEGER NOT NULL
 );
-PRAGMA user_version = 1;
+CREATE TABLE IF NOT EXISTS security_checks (
+    account_id TEXT NOT NULL REFERENCES accounts(id), user_name TEXT NOT NULL,
+    section TEXT NOT NULL, data TEXT, status TEXT NOT NULL, message TEXT,
+    attempted_at TEXT NOT NULL, checked_at TEXT,
+    PRIMARY KEY(account_id,user_name,section)
+);
+CREATE TABLE IF NOT EXISTS fleet_states (
+    fleet_key TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS operations (
+    id TEXT PRIMARY KEY, fleet_key TEXT NOT NULL, action TEXT NOT NULL,
+    target TEXT NOT NULL, status TEXT NOT NULL, steps TEXT NOT NULL,
+    message TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS refresh_schedule (
+    connection_id TEXT PRIMARY KEY, interval_minutes INTEGER NOT NULL,
+    failures INTEGER NOT NULL DEFAULT 0, next_attempt TEXT NOT NULL
+);
+PRAGMA user_version = 3;
 """
 
 
@@ -86,7 +104,7 @@ class Store:
         os.chmod(self.path, 0o600)
         with self.db() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in (0, 1):
+            if version not in (0, 1, 2, 3):
                 raise ValueError("This cache was created by a newer Snowbeam. Upgrade Snowbeam.")
             db.executescript(SCHEMA)
 
@@ -110,6 +128,7 @@ class Store:
                     "SELECT settings FROM connections WHERE id=?", (profile.key,)
                 ).fetchone()
                 if old and old["settings"] != settings:
+                    db.execute("DELETE FROM refresh_schedule WHERE connection_id=?", (profile.key,))
                     # Changed settings must be re-verified, never inherit green status.
                     db.execute(
                         """UPDATE connections SET status='not_checked', message=NULL,
@@ -132,6 +151,36 @@ class Store:
                         profile.is_default,
                     ),
                 )
+
+    def refresh_due(self, key: str, minutes: int, now: datetime | None = None) -> bool:
+        if minutes == 0:
+            return False
+        with self.db() as db:
+            row = db.execute(
+                "SELECT * FROM refresh_schedule WHERE connection_id=?", (key,)
+            ).fetchone()
+        return (
+            not row
+            or row["interval_minutes"] != minutes
+            or (now or utcnow()) >= datetime.fromisoformat(row["next_attempt"])
+        )
+
+    def record_refresh(
+        self, key: str, minutes: int, *, failed: bool, now: datetime | None = None
+    ) -> None:
+        with self.db() as db:
+            row = db.execute(
+                "SELECT failures FROM refresh_schedule WHERE connection_id=?", (key,)
+            ).fetchone()
+            failures = min((row["failures"] if row else 0) + 1, 4) if failed else 0
+            delay = min(max(minutes, 1) * 2**failures, 1440)
+            db.execute(
+                """INSERT INTO refresh_schedule VALUES (?,?,?,?)
+                ON CONFLICT(connection_id) DO UPDATE SET
+                interval_minutes=excluded.interval_minutes, failures=excluded.failures,
+                next_attempt=excluded.next_attempt""",
+                (key, minutes, failures, iso((now or utcnow()) + timedelta(minutes=delay))),
+            )
 
     @staticmethod
     def _account(db, data: dict, checked: str, source: str = "connection") -> str:
@@ -372,3 +421,140 @@ class Store:
     def mark_notice(self, key: str) -> None:
         with self.db() as db:
             db.execute("INSERT OR REPLACE INTO notices VALUES (?,?)", (key, iso()))
+
+    def ensure_account(self, identity: dict) -> str:
+        with self.db() as db:
+            return self._account(db, identity, iso())
+
+    def save_security(self, account_id: str, user: str, sections: dict) -> None:
+        from .security import sanitize_section
+
+        now = iso()
+        with self.db() as db:
+            for section, result in sections.items():
+                if result["status"] == "ok":
+                    data = json.dumps(sanitize_section(section, result["data"]), sort_keys=True)
+                    db.execute(
+                        """INSERT INTO security_checks
+                        (account_id,user_name,section,data,status,attempted_at,checked_at)
+                        VALUES (?,?,?,?,'ok',?,?) ON CONFLICT(account_id,user_name,section)
+                        DO UPDATE SET data=excluded.data,status='ok',message=NULL,
+                        attempted_at=excluded.attempted_at,checked_at=excluded.checked_at""",
+                        (account_id, user, section, data, now, now),
+                    )
+                else:
+                    db.execute(
+                        """INSERT INTO security_checks
+                        (account_id,user_name,section,status,message,attempted_at)
+                        VALUES (?,?,?,?,?,?) ON CONFLICT(account_id,user_name,section)
+                        DO UPDATE SET status=excluded.status,message=excluded.message,
+                        attempted_at=excluded.attempted_at""",
+                        (account_id, user, section, result["status"], result.get("message"), now),
+                    )
+
+    def security(self, account_id: str, user: str) -> dict:
+        with self.db() as db:
+            rows = db.execute(
+                "SELECT * FROM security_checks WHERE account_id=? AND user_name=?",
+                (account_id, user),
+            ).fetchall()
+        result = {}
+        for row in rows:
+            value = dict(row)
+            value["data"] = json.loads(value["data"]) if value["data"] else None
+            value["stale"] = stale(value["checked_at"])
+            result[value.pop("section")] = value
+        return result
+
+    def fleet_state(self, key: str) -> dict:
+        with self.db() as db:
+            row = db.execute("SELECT data FROM fleet_states WHERE fleet_key=?", (key,)).fetchone()
+        return json.loads(row["data"]) if row else {}
+
+    def fleet_states(self) -> dict:
+        with self.db() as db:
+            rows = db.execute("SELECT fleet_key, data FROM fleet_states").fetchall()
+        return {row["fleet_key"]: json.loads(row["data"]) for row in rows}
+
+    def save_fleet_state(self, key: str, state: dict) -> None:
+        allowed = {
+            "target",
+            "status",
+            "credential_name",
+            "credential_kind",
+            "credential_ref",
+            "pending_name",
+            "pending_ref",
+            "pending_fingerprint",
+            "public_key_fp",
+            "key_slot",
+            "pending_slot",
+            "previous_slot",
+            "previous_name",
+            "previous_ref",
+            "previous_fingerprint",
+            "message",
+            "runtime_verified_at",
+            "verification_source",
+            "runtime_ip",
+            "runtime_role",
+            "operation_id",
+            "created_user",
+            "workload",
+            "approved_policy_digest",
+            "approved_role_digest",
+        }
+        if set(state) - allowed:
+            raise ValueError("Unknown lifecycle fields. Credentials cannot be stored in the cache.")
+        from .fleet import REFERENCE_FIELDS
+
+        for field in ("credential_ref", "pending_ref", "previous_ref"):
+            if state.get(field) and set(state[field]) - REFERENCE_FIELDS:
+                raise ValueError("Only vault references can be cached.")
+        with self.db() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO fleet_states VALUES (?,?,?)",
+                (key, json.dumps(state, sort_keys=True), iso()),
+            )
+
+    def save_operation(
+        self,
+        operation_id: str,
+        key: str,
+        action: str,
+        target: dict,
+        status: str,
+        steps: list[str],
+        message: str = "",
+    ) -> None:
+        now = iso()
+        with self.db() as db:
+            db.execute(
+                """INSERT INTO operations VALUES (?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET status=excluded.status,steps=excluded.steps,
+                message=excluded.message,updated_at=excluded.updated_at""",
+                (
+                    operation_id,
+                    key,
+                    action,
+                    json.dumps(target, sort_keys=True),
+                    status,
+                    json.dumps(steps),
+                    message,
+                    now,
+                    now,
+                ),
+            )
+
+    def operations(self, key: str | None = None) -> list[dict]:
+        with self.db() as db:
+            rows = db.execute(
+                "SELECT * FROM operations WHERE (? IS NULL OR fleet_key=?) ORDER BY "
+                "created_at DESC LIMIT 100",
+                (key, key),
+            ).fetchall()
+        result = [dict(r) for r in rows]
+        for row in result:
+            row["steps"] = json.loads(row["steps"])
+            row["target"] = json.loads(row["target"])
+        return result

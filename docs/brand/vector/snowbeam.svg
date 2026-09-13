@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-labelledby="snowbeam-title snowbeam-desc">
+      <title id="snowbeam-title">Snowbeam</title>
+      <desc id="snowbeam-desc">A standing person enveloped by an icy blue transporter beam; after they vanish, snowflakes drift down.</desc>
+      <defs>
+      <linearGradient id="snowbeam-beam-fill" x1="0" y1="0" x2="0" y2="1">
+        <stop stop-color="#97edff" stop-opacity=".05"/>
+        <stop offset=".5" stop-color="#62d8ef" stop-opacity=".24"/>
+        <stop offset="1" stop-color="#63d7ed" stop-opacity=".1"/>
+      </linearGradient>
+      <linearGradient id="snowbeam-edge" x1="0" y1="0" x2="0" y2="1">
+        <stop stop-color="#a2edfa" stop-opacity=".25"/>
+        <stop offset=".55" stop-color="#a2edfa"/>
+        <stop offset="1" stop-color="#a2edfa" stop-opacity=".3"/>
+      </linearGradient>
+      <linearGradient id="snowbeam-light" x1="0" y1="0" x2="0" y2="1">
+        <stop stop-color="#edfcff"/><stop offset="1" stop-color="#c2eff5"/>
+      </linearGradient>
+    </defs>
+      <rect x="8" y="8" width="496" height="496" rx="112" fill="#091923"/>
+      <rect x="9" y="9" width="494" height="494" rx="111" fill="none" stroke="#23404e" stroke-opacity=".65" stroke-width="2"/>
+      <g id="snowbeam-ground" opacity="0.9749" fill="none" stroke="#a2edfa">
+        <ellipse cx="256" cy="407" rx="107" ry="18" stroke-width="4"/>
+        <ellipse cx="256" cy="407" rx="74" ry="10" stroke-width="1.5" opacity=".3"/>
+      </g>
+      <g id="snowbeam-beam" opacity="0.9928" transform="translate(0 0) scale(1 1)">
+        <path d="M181 110 Q256 82 331 110 L362 400 Q256 437 150 400Z" fill="url(#snowbeam-beam-fill)"/>
+        <path d="M181 110L150 399 M331 110L362 399" fill="none" stroke="url(#snowbeam-edge)" stroke-width="5" stroke-linecap="round"/>
+        <path d="M206 111L191 384 M231 112L226 366 M281 112L286 366 M306 111L321 384" fill="none" stroke="#a2edfa" stroke-width="2" opacity=".18"/>
+        <ellipse cx="256" cy="110" rx="75" ry="15" fill="none" stroke="#a2edfa" stroke-width="4" opacity=".8"/>
+      </g>
+      <g id="snowbeam-person" opacity="1" transform="translate(0 0)" fill="url(#snowbeam-light)">
+    <circle cx="256" cy="204" r="23"/>
+    <path d="M241 241 C230 241 220 249 217 261 L203 311
+      C201 318 205 323 211 323 C216 323 219 320 221 315 L234 277
+      L233 326 L223 378 C221 386 225 392 232 392
+      C238 392 242 388 244 381 L255 337 L257 337 L268 381
+      C270 388 274 392 280 392 C287 392 291 386 289 378
+      L279 326 L278 277 L291 315 C293 320 296 323 301 323
+      C307 323 311 318 309 311 L295 261 C292 249 282 241 271 241 Z"/>
+  </g>
+      <g transform="translate(350 179) scale(1.22)" stroke="#a2edfa" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M0-14V14 M-12.12-7L12.12 7 M-12.12 7L12.12-7
+    M-4-10L0-6 4-10 M-4 10L0 6 4 10
+    M-10.7-1.2L-5.2-3 -6.7-8.5 M10.7 1.2L5.2 3 6.7 8.5
+    M-6.7 8.5L-5.2 3 -10.7 1.2 M6.7-8.5L5.2-3 10.7-1.2"/>
+  </g>
+      <g id="snowbeam-snow" stroke="#effcff" stroke-width="2.7" fill="none" stroke-linecap="round" stroke-linejoin="round"></g>
+    </svg>

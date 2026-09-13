@@ -9,6 +9,7 @@ import sys
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from pathlib import Path
 
 import tomlkit
@@ -23,10 +24,16 @@ FIELDS = (
     "database",
     "schema",
     "host",
+    "workload_identity_provider",
     "token_file_path",
     "private_key_file",
 )
-AUTH_METHODS = ("externalbrowser", "PROGRAMMATIC_ACCESS_TOKEN", "SNOWFLAKE_JWT")
+AUTH_METHODS = (
+    "externalbrowser",
+    "PROGRAMMATIC_ACCESS_TOKEN",
+    "SNOWFLAKE_JWT",
+    "WORKLOAD_IDENTITY",
+)
 
 
 class ConfigError(Exception):
@@ -51,14 +58,16 @@ def read_document(path: Path):
         raise ConfigError(f"Cannot read valid TOML from {path}. Fix the file and retry.") from None
 
 
-def atomic_write(path: Path, content: str) -> None:
+def atomic_write(path: Path, content: str | bytes) -> None:
     """Replace a private file without leaving a partially written configuration."""
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if path.is_symlink():
         raise ConfigError(f"Refusing to replace symlink {path}; edit its target directly.")
     temp_path = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as handle:
+        with tempfile.NamedTemporaryFile(
+            mode="wb" if isinstance(content, bytes) else "w", dir=path.parent, delete=False
+        ) as handle:
             temp_path = Path(handle.name)
             os.chmod(temp_path, 0o600)
             handle.write(content)
@@ -77,6 +86,7 @@ class Profile:
     source_path: Path
     settings: dict[str, str]
     is_default: bool = False
+    environment: dict[str, str] | None = dataclass_field(default=None, repr=False, compare=False)
 
     @property
     def key(self) -> str:
@@ -88,7 +98,11 @@ class Profile:
 
     @property
     def background_safe(self) -> bool:
-        return self.auth.upper() in {"PROGRAMMATIC_ACCESS_TOKEN", "SNOWFLAKE_JWT"}
+        return self.auth.upper() in {
+            "PROGRAMMATIC_ACCESS_TOKEN",
+            "SNOWFLAKE_JWT",
+            "WORKLOAD_IDENTITY",
+        }
 
 
 class Config:
@@ -211,3 +225,20 @@ class Config:
         self.profile(name)
         with self._edit(self.path) as document:
             document["default_connection_name"] = name
+
+    def ensure_shared(self) -> None:
+        """Consolidate existing profiles before adding a shared agent connection."""
+        import copy
+
+        target = self.path.with_name("connections.toml")
+        if self.source == target:
+            return
+        with self._edit(self.path) as document:
+            entries = document.get("connections", {})
+            if not isinstance(entries, dict):
+                raise ConfigError("Expected connection tables before sharing profiles.")
+            with self._edit(target) as shared:
+                if shared:
+                    raise ConfigError("Shared connections changed while preparing profiles. Retry.")
+                for key, value in entries.items():
+                    shared[key] = copy.deepcopy(value)

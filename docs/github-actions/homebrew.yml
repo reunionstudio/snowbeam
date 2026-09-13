@@ -1,0 +1,44 @@
+name: Homebrew
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      HOMEBREW_NO_ANALYTICS: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: '0.11.2'
+          python-version: '3.13'
+      - run: uv sync --frozen
+      - run: uv build
+      - run: uv run python tools/check_release.py dist
+      - run: uv run python tools/homebrew_formula.py dist --local
+      - name: Install and test the local release formula
+        run: |
+          brew tap-new reunionstudio/snowbeam-ci
+          cp dist/homebrew-local/snowbeam.rb "$(brew --repository reunionstudio/snowbeam-ci)/Formula/snowbeam.rb"
+          brew install --build-from-source reunionstudio/snowbeam-ci/snowbeam
+          brew test reunionstudio/snowbeam-ci/snowbeam
+          "$(brew --prefix snowbeam)/bin/snowbeam" --version
+      - name: Remove the test installation
+        if: always()
+        run: |
+          if brew list --formula snowbeam >/dev/null 2>&1; then
+            brew uninstall --formula reunionstudio/snowbeam-ci/snowbeam
+          fi
+          if brew tap | rg -q '^reunionstudio/snowbeam-ci$'; then
+            brew untap reunionstudio/snowbeam-ci
+          fi

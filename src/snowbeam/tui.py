@@ -22,9 +22,14 @@ from textual.widgets import (
 )
 
 from .config import AUTH_METHODS, FIELDS, Config, ConfigError
+from .fleet_tui import Evidence, IdentityForm, LifecycleChoice, PlanReview
+from .provision import Provisioner
 from .service import RefreshResult, Service
-from .snowflake import safe_text
+from .snowflake import SnowError, safe_text
 from .store import Store, expiry_label, stale
+from .updates import Updates
+from .updates_tui import UpdatePanel
+from .upgrader import HomebrewUpgrade, UpgradeError, homebrew_upgrader
 
 
 def literal(value: object, style: str = "") -> Text:
@@ -72,6 +77,10 @@ class ConnectionForm(ModalScreen[bool]):
                 ("database", "Database (optional)"),
                 ("schema", "Schema (optional)"),
                 ("host", "Host override (optional; retain private connectivity settings)"),
+                (
+                    "workload_identity_provider",
+                    "Workload identity provider (AWS, AZURE, GCP, OIDC)",
+                ),
             ):
                 yield Label(label)
                 yield Input(value=self.values.get(field, ""), id=f"field-{field}")
@@ -213,6 +222,8 @@ class Snowbeam(App):
         border: solid #62bad9; background: #13263a;
     }
     .confirm { height: auto; max-height: 90%; }
+    .evidence { width: 96; }
+    #identity-search { height: 3; margin-bottom: 1; }
     .dialog-title { text-style: bold; color: #a6dbf2; margin-bottom: 1; height: auto; }
     .dialog Label { margin-top: 1; }
     .dialog Input, .dialog Select { margin-bottom: 0; }
@@ -230,17 +241,26 @@ class Snowbeam(App):
         ("b", "bind", "Associate PAT"),
         ("o", "discover", "Discover accounts"),
         ("c", "copy_identifier", "Copy account"),
+        ("p", "lifecycle", "Agent lifecycle"),
+        ("u", "updates", "Updates"),
+        ("enter", "evidence", "Details"),
     ]
 
     def __init__(self, service: Service, *, auto_refresh: bool = True):
         super().__init__()
         self.service = service
         self.refresh_metadata = auto_refresh
+        self.network_allowed = auto_refresh and not service.demo
+        self.updates = Updates(service.store.directory)
+        self.checking_updates = False
+        self.upgrading = False
         self.selected_connection: str | None = None
         self.scope: tuple[str, str] | None = None
         self.busy = False
         self.table_connections: dict[str, dict] = {}
         self.table_tokens: dict[str, dict] = {}
+        self.table_identities: dict[str, dict] = {}
+        self.selected_identity: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -257,6 +277,18 @@ class Snowbeam(App):
                             markup=False,
                         )
                         yield DataTable(id="connections", cursor_type="row", zebra_stripes=True)
+                    with TabPane("Identities", id="identities-tab"):
+                        yield Input(
+                            placeholder="Search client, identity, account, owner, or runtime",
+                            id="identity-search",
+                        )
+                        yield Static(
+                            "Enter: full security evidence · E: labels · A: agent · T: inspect · "
+                            "P: lifecycle",
+                            classes="pane-note",
+                            markup=False,
+                        )
+                        yield DataTable(id="identities", cursor_type="row", zebra_stripes=True)
                     with TabPane("Tokens", id="tokens-tab"):
                         yield Static(
                             "PAT metadata only. Expiration is independent of connection health.",
@@ -277,12 +309,16 @@ class Snowbeam(App):
             yield Button("Edit", id="edit")
             yield Button("Default", id="default")
             yield Button("Remove", id="remove")
+            yield Button("Updates", id="updates")
         yield Static("", id="message", markup=False)
         yield Footer()
 
     def on_mount(self) -> None:
         self.query_one("#connections", DataTable).add_columns(
             "Connection", "Organization / account", "User", "Authentication", "Health", "PAT"
+        )
+        self.query_one("#identities", DataTable).add_columns(
+            "Identity", "Security", "Client", "Account", "Runtime"
         )
         self.query_one("#tokens", DataTable).add_columns(
             "Token", "Account", "User", "Status", "Expires (UTC)", "Remaining"
@@ -292,9 +328,101 @@ class Snowbeam(App):
         )
         self.reload()
         self.set_interval(60, self.render_data)
+        self.update_button()
         if self.refresh_metadata and not self.service.demo:
-            self.set_interval(3600, self.background_refresh)
+            self.set_interval(60, self.background_refresh)
             self.background_refresh()
+            self.set_interval(3600, self.background_update_check)
+            self.background_update_check()
+
+    def update_button(self) -> None:
+        self.screen_stack[0].query_one("#updates", Button).label = (
+            "Update available" if self.updates.status()["available"] else "Updates"
+        )
+
+    @on(Button.Pressed, "#updates")
+    def action_updates(self) -> None:
+        if len(self.screen_stack) > 1:
+            return
+        try:
+            self.service.preferences.automatic_updates()
+        except (ConfigError, OSError) as exc:
+            self.message(str(exc))
+        else:
+            self.push_screen(UpdatePanel())
+
+    def background_update_check(self) -> None:
+        if not self.network_allowed or self.checking_updates:
+            return
+        try:
+            if self.service.preferences.automatic_updates() and self.updates.due():
+                self.check_updates()
+        except (ConfigError, OSError) as exc:
+            self.message(str(exc))
+
+    def check_updates(self) -> None:
+        if not self.network_allowed or self.checking_updates or self.upgrading:
+            return
+        self.checking_updates = True
+        self.update_worker()
+
+    @work(thread=True)
+    def update_worker(self) -> None:
+        try:
+            self.updates.check()
+        except OSError:
+            self.call_from_thread(self.message, "Could not save the update-check result.")
+        finally:
+            self.call_from_thread(self.finish_update_check)
+
+    def finish_update_check(self) -> None:
+        self.checking_updates = False
+        self.update_button()
+        if isinstance(self.screen, UpdatePanel):
+            self.screen.show_status()
+
+    def install_update(self) -> None:
+        if not self.network_allowed or self.upgrading:
+            return
+        if self.busy or self.checking_updates:
+            self.install_failed("Wait for the current operation to finish, then update Snowbeam.")
+            return
+        updater = homebrew_upgrader()
+        status = self.updates.status()
+        if updater is None or not status["available"]:
+            self.install_failed("A verified Homebrew installation and newer release are required.")
+            return
+        # This is the confirmation boundary: only the user's button invokes it.
+        self.upgrading = self.busy = True
+        self.install_progress("Preparing the update…")
+        self.install_worker(updater, status["latest"])
+
+    @work(thread=True)
+    def install_worker(self, updater: HomebrewUpgrade, version: str) -> None:
+        try:
+            restart = updater.install(
+                version, lambda message: self.call_from_thread(self.install_progress, message)
+            )
+        except UpgradeError as exc:
+            self.call_from_thread(self.install_failed, str(exc))
+        else:
+            self.call_from_thread(self.exit, restart)
+
+    def install_progress(self, message: str) -> None:
+        if isinstance(self.screen, UpdatePanel):
+            self.screen.install_progress(message)
+
+    def install_failed(self, message: str) -> None:
+        # An active Snowflake worker owns busy unless this was an installation.
+        if self.upgrading:
+            self.upgrading = self.busy = False
+        self.install_progress(message)
+
+    def action_quit(self) -> None:
+        if self.upgrading:
+            self.install_progress("Update in progress. Snowbeam will restart when it finishes.")
+        else:
+            self.exit()
 
     def message(self, value: str) -> None:
         self.query_one("#message", Static).update(safe_text(value))
@@ -371,6 +499,7 @@ class Snowbeam(App):
                         "PROGRAMMATIC_ACCESS_TOKEN": "PAT",
                         "SNOWFLAKE_JWT": "Key pair",
                         "EXTERNALBROWSER": "Browser",
+                        "WORKLOAD_IDENTITY": "Workload",
                     }.get(row["settings"].get("authenticator", "snowflake").upper(), "Other")
                 ),
                 literal(health, "green" if health == "Verified" else "yellow"),
@@ -432,13 +561,15 @@ class Snowbeam(App):
             if alerts or issues
             else "No upcoming expirations in the verified inventory."
         )
+        self.render_identities()
         self._buttons()
         self.show_active_details()
 
     def _buttons(self) -> None:
         for button_id in ("refresh", "add", "edit", "default", "remove"):
             self.query_one(f"#{button_id}", Button).disabled = self.busy or (
-                button_id in {"edit", "default", "remove"} and not self.current()
+                (button_id == "edit" and not (self.current() or self.current_identity()))
+                or (button_id in {"default", "remove"} and not self.current())
             )
 
     @on(Tree.NodeSelected, "#inventory")
@@ -486,6 +617,19 @@ class Snowbeam(App):
         active = self.query_one(TabbedContent).active
         if active == "connections-tab" and (row := self.current()):
             self.show_connection_details(row)
+        elif active == "identities-tab" and (row := self.current_identity()):
+            self.query_one("#details", Static).update(
+                safe_text(
+                    f"{row['id']} · Snowflake user: {row['user_name']} · Owner: {row['owner']}"
+                )
+                + "\n"
+                + safe_text(
+                    "; ".join(row["issues"][:3])
+                    or "Scoped security metadata inspected; see evidence for coverage."
+                )
+                + "\nEnter opens policies, network rules, grants, credentials, and "
+                "verification times."
+            )
         elif active == "tokens-tab" and self.table_tokens:
             index = self.query_one("#tokens", DataTable).cursor_row
             self.show_token_details(
@@ -506,7 +650,7 @@ class Snowbeam(App):
     def background_refresh(self) -> None:
         if not self.busy and not self.service.demo:
             try:
-                if any(p.background_safe for p in self.service.config.profiles()):
+                if self.service.refresh_due():
                     self.request_refresh(interactive=False)
             except ConfigError as exc:
                 self.message(str(exc))
@@ -528,7 +672,9 @@ class Snowbeam(App):
     @work(thread=True)
     def refresh_worker(self, name: str | None, interactive: bool, organization: bool) -> None:
         try:
-            result = self.service.refresh(name, interactive=interactive, organization=organization)
+            result = self.service.refresh(
+                name, interactive=interactive, organization=organization, scheduled=not interactive
+            )
         except (ConfigError, OSError, ValueError) as exc:
             result = RefreshResult(issues=[safe_text(exc)])
         self.call_from_thread(self.finish_refresh, result)
@@ -540,10 +686,15 @@ class Snowbeam(App):
 
     @on(Button.Pressed, "#refresh")
     def action_refresh_all(self) -> None:
-        self.request_refresh()
+        if self.query_one(TabbedContent).active == "identities-tab":
+            self.request_fleet("refresh")
+        else:
+            self.request_refresh()
 
     def action_refresh_selected(self) -> None:
-        if row := self.current():
+        if row := self.current_identity():
+            self.request_fleet("refresh", row["id"])
+        elif row := self.current():
             self.request_refresh(row["name"])
 
     def action_discover(self) -> None:
@@ -553,11 +704,18 @@ class Snowbeam(App):
     @on(Button.Pressed, "#add")
     def action_add(self) -> None:
         if not self.busy:
-            self.push_screen(ConnectionForm(self.service.config), self.reload)
+            if self.query_one(TabbedContent).active == "identities-tab":
+                self.push_screen(IdentityForm(self.service.fleet), self.reload)
+            else:
+                self.push_screen(ConnectionForm(self.service.config), self.reload)
 
     @on(Button.Pressed, "#edit")
     def action_edit(self) -> None:
-        if not self.busy and (row := self.current()):
+        if self.busy:
+            return
+        if row := self.current_identity():
+            self.push_screen(IdentityForm(self.service.fleet, row), self.reload)
+        elif row := self.current():
             self.push_screen(ConnectionForm(self.service.config, row["name"]), self.reload)
 
     @on(Button.Pressed, "#default")
@@ -601,3 +759,140 @@ class Snowbeam(App):
                 self.message("Copied account identifier (requires terminal clipboard support).")
             else:
                 self.message("Refresh this connection to verify its account identifier.")
+
+    def render_identities(self) -> None:
+        search = self.query_one("#identity-search", Input).value.casefold()
+        try:
+            rows = [r for r in self.service.fleet.identities() if self.in_scope(r)]
+        except (ConfigError, ValueError, OSError) as exc:
+            self.message(str(exc))
+            rows = []
+        rows = [
+            r
+            for r in rows
+            if search
+            in " ".join(
+                str(r.get(f) or "")
+                for f in (
+                    "id",
+                    "client",
+                    "organization",
+                    "account_name",
+                    "user_name",
+                    "owner",
+                    "runtime",
+                )
+            ).casefold()
+        ]
+        table = self.query_one("#identities", DataTable)
+        table.clear()
+        self.table_identities = {r["id"]: r for r in rows}
+        for row in rows:
+            table.add_row(
+                literal(row["id"]),
+                literal(
+                    row["status"],
+                    "cyan" if row["status"] in {"Matches template", "Inspected"} else "yellow",
+                ),
+                literal(row["client"]),
+                literal(f"{row['organization'] or '?'} / {row['account_name'] or '?'}"),
+                literal(row["runtime"]),
+                key=row["id"],
+            )
+        if self.selected_identity in self.table_identities:
+            table.move_cursor(row=list(self.table_identities).index(self.selected_identity))
+        elif rows:
+            self.selected_identity = rows[0]["id"]
+        else:
+            self.selected_identity = None
+
+    @on(Input.Changed, "#identity-search")
+    def search_identities(self) -> None:
+        if self.is_mounted:
+            self.render_identities()
+            self.show_active_details()
+
+    @on(DataTable.RowHighlighted, "#identities")
+    def identity_selected(self, event: DataTable.RowHighlighted) -> None:
+        key = str(event.row_key.value)
+        if key in self.table_identities:
+            self.selected_identity = key
+            self.show_active_details()
+
+    def current_identity(self) -> dict | None:
+        if self.query_one(TabbedContent).active != "identities-tab":
+            return None
+        return self.table_identities.get(self.selected_identity or "")
+
+    def action_evidence(self) -> None:
+        if row := self.current_identity():
+            self.push_screen(Evidence(row))
+
+    def action_lifecycle(self) -> None:
+        row = self.current_identity()
+        if self.busy or not row:
+            return
+        if not row["template"]:
+            self.message("Lifecycle actions apply to agents created from a provisioning template.")
+            return
+
+        def selected(action):
+            if action:
+                self.request_fleet("verify" if action == "verify" else "plan", row["id"], action)
+
+        self.push_screen(LifecycleChoice(row), selected)
+
+    def request_fleet(
+        self,
+        command: str,
+        identity: str | None = None,
+        action: str = "provision",
+        approval: str = "",
+    ) -> None:
+        if self.busy:
+            return
+        self.busy = True
+        self._buttons()
+        self.message(
+            "Reading security metadata…"
+            if command == "refresh"
+            else "Preparing the identity operation…"
+        )
+        self.fleet_worker(command, identity, action, approval)
+
+    @work(thread=True)
+    def fleet_worker(self, command, identity, action, approval) -> None:
+        try:
+            fleet = self.service.fleet
+            if command == "refresh":
+                result = fleet.refresh(identity)
+            elif command == "plan":
+                result = Provisioner(fleet).plan(identity, action)
+            elif command == "apply":
+                result = Provisioner(fleet).apply(identity, action, approval)
+            else:
+                result = Provisioner(fleet).verify(identity, fleet.config.spec(identity)["runtime"])
+        except (ValueError, ConfigError, SnowError, OSError) as exc:
+            result = {"error": safe_text(exc)}
+        self.call_from_thread(self.finish_fleet, command, result)
+
+    def finish_fleet(self, command, result) -> None:
+        self.busy = False
+        self.reload()
+        if "error" in result:
+            self.message(result["error"])
+        elif command == "plan":
+
+            def reviewed(approved):
+                if approved:
+                    self.request_fleet(
+                        "apply", result["identity"], result["action"], result["approval"]
+                    )
+
+            self.push_screen(PlanReview(result), reviewed)
+        else:
+            self.message(
+                "; ".join(result.get("issues", []))
+                or result.get("next")
+                or "Identity operation completed."
+            )

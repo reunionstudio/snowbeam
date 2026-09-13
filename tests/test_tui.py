@@ -9,7 +9,7 @@ async def test_inventory_and_token_tabs_render_and_filter(tmp_path):
     app = Snowbeam(service, auto_refresh=False)
     async with app.run_test(size=(120, 40)) as pilot:
         await pilot.pause()
-        assert app.query_one("#connections", DataTable).row_count == 2
+        assert app.query_one("#connections", DataTable).row_count == 3
         assert app.query_one("#tokens", DataTable).row_count == 3
         assert app.query_one("#attention", DataTable).row_count == 2
         assert "Configuration:" in str(app.query_one("#details", Static).render())
@@ -94,3 +94,43 @@ async def test_empty_app_is_usable_at_small_terminal_size(service):
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(app.screen, ConnectionForm)
+
+
+async def test_identity_search_labels_add_form_and_evidence_are_independent(tmp_path):
+    from snowbeam.fleet_tui import Evidence, IdentityForm
+
+    service = demo_service(tmp_path)
+    app = Snowbeam(service, auto_refresh=False)
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.query_one(TabbedContent).active = "identities-tab"
+        await pilot.pause()
+        assert app.query_one("#identities", DataTable).row_count == 4
+        app.query_one("#identity-search", Input).value = "Northwind"
+        await pilot.pause()
+        assert app.query_one("#identities", DataTable).row_count == 1
+        assert app.current_identity()["id"] == "jane-northwind"
+        app.action_edit()
+        await pilot.pause()
+        assert isinstance(app.screen, IdentityForm)
+        app.screen.query_one("#identity-owner", Input).value = "Jane and Bob"
+        app.screen.query_one("#identity-save", Button).press()
+        await pilot.pause()
+        assert service.fleet.config.spec("jane-northwind")["owner"] == "Jane and Bob"
+        assert service.config.profile("northwind").settings["user"] == "JANE_CONSULTANT"
+        app.action_evidence()
+        await pilot.pause()
+        assert isinstance(app.screen, Evidence)
+        await pilot.press("escape")
+        app.action_add()
+        await pilot.pause()
+        assert isinstance(app.screen, IdentityForm)
+        app.screen.query_one("#identity-template", Select).value = "acme-reporting"
+        app.screen.query_one("#identity-name", Input).value = "new-agent"
+        app.screen.query_one("#identity-user", Input).value = "NEW_AGENT"
+        app.screen.query_one("#identity-owner", Input).value = "Jane"
+        app.screen.query_one("#identity-runtime", Input).value = "runner-west"
+        app.screen.query_one("#identity-save", Button).press()
+        await pilot.pause()
+        assert service.fleet.config.spec("new-agent")["user"] == "NEW_AGENT"
+        assert "new-agent" not in [p.name for p in service.config.profiles()]
+        assert not service.store.operations()

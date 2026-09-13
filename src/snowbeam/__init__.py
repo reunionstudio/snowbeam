@@ -1,3 +1,5 @@
 """Snowflake connections and credential metadata, kept in order."""
 
-__version__ = "0.1.0"
+from importlib.metadata import version as _version
+
+__version__ = _version("snowbeam")

@@ -37,7 +37,15 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Use isolated synthetic data; never connect to Snowflake",
     )
+    root.add_argument(
+        "--fleet-config",
+        type=Path,
+        help="Snowbeam companion TOML (default: alongside Snowflake config)",
+    )
     commands = root.add_subparsers(dest="command")
+    from .fleet_cli import add_commands
+
+    add_commands(commands)
     tui = commands.add_parser("tui", help="Open the terminal app (default)")
     tui.add_argument("--offline", action="store_true", help="Disable automatic metadata refresh")
     inventory = commands.add_parser(
@@ -99,6 +107,15 @@ def parser() -> argparse.ArgumentParser:
         "reminders", help="Install or remove opt-in desktop expiry checks"
     )
     reminders.add_argument("action", choices=["install", "remove"])
+    updates = commands.add_parser("updates", help="Check releases and show upgrade instructions")
+    updates.add_argument(
+        "action", nargs="?", choices=["status", "check", "enable", "disable"], default="status"
+    )
+    updates.add_argument("--json", action="store_true")
+    policy = commands.add_parser("refresh-policy", help="View or set background refresh intervals")
+    policy.add_argument("name", nargs="?", help="Connection name")
+    policy.add_argument("--minutes", type=int, help="1–1440 minutes; 0 disables background refresh")
+    policy.add_argument("--json", action="store_true")
     return root
 
 
@@ -118,6 +135,57 @@ def emit(value) -> None:
 
 
 def run(args, service: Service) -> int:
+    from .fleet_cli import COMMANDS
+    from .fleet_cli import run as run_fleet
+
+    if getattr(args, "fleet_config", None) and not service.demo:
+        from .fleet_service import FleetService
+
+        service.fleet = FleetService(service, args.fleet_config)
+    if args.command in COMMANDS:
+        return run_fleet(args, service)
+    if args.command == "updates":
+        from .installation import upgrade_instructions
+        from .updates import Updates, describe
+
+        updates = Updates(service.store.directory)
+        if args.action in ("check", "enable") and service.demo:
+            raise ValueError("Online update checks are unavailable in demo mode.")
+        if args.action in ("enable", "disable"):
+            service.preferences.set_automatic_updates(args.action == "enable")
+        status = updates.check() if args.action == "check" else updates.status()
+        status["automatic"] = service.preferences.automatic_updates()
+        status["installation"], status["upgrade_instructions"] = upgrade_instructions()
+        if args.json:
+            emit(status)
+        else:
+            print(describe(status))
+            print(f"Automatic checks: {'on' if status['automatic'] else 'off'}")
+            print(status["upgrade_instructions"])
+        return 2 if args.action == "check" and status["error"] else 0
+    if args.command == "refresh-policy":
+        if args.minutes is not None:
+            if not args.name:
+                raise ValueError("Specify a connection name when setting its refresh interval.")
+            service.preferences.set_refresh_minutes(
+                service.config.profile(args.name).key, args.minutes
+            )
+        profiles = [service.config.profile(args.name)] if args.name else service.config.profiles()
+        rows = [
+            {
+                "connection": p.name,
+                "minutes": service.preferences.refresh_minutes(p.key),
+                "unattended_authentication": p.background_safe,
+            }
+            for p in profiles
+        ]
+        if args.json:
+            emit(rows)
+        else:
+            for row in rows:
+                cadence = f"every {row['minutes']} minutes" if row["minutes"] else "disabled"
+                print(f"{safe_text(row['connection'])}: {cadence}")
+        return 0
     if args.command in (None, "tui"):
         if not sys.stdout.isatty():
             raise ValueError(
@@ -125,8 +193,11 @@ def run(args, service: Service) -> int:
                 "--demo check --json for headless output."
             )
         from .tui import Snowbeam
+        from .upgrader import Restart, restart_app
 
-        Snowbeam(service, auto_refresh=not getattr(args, "offline", False)).run()
+        result = Snowbeam(service, auto_refresh=not getattr(args, "offline", False)).run()
+        if isinstance(result, Restart):
+            restart_app(result.command, args, service)
         return 0
     if args.command in ("desktop", "reminders"):
         if service.demo:
@@ -147,11 +218,11 @@ def run(args, service: Service) -> int:
         try:
             service.import_profiles()
             if args.refresh:
-                issues.extend(service.refresh(interactive=False).issues)
+                issues.extend(service.refresh(interactive=False, scheduled=True).issues)
         except (ConfigError, OSError) as exc:
             issues.append(str(exc))
         alerts = service.store.alerts(days=args.days)
-        issues = list(dict.fromkeys(issues + service.coverage_issues()))
+        issues = list(dict.fromkeys(issues + service.coverage_issues() + service.fleet.issues()))
         sent = failed = 0
         if args.notify:
             if service.demo:
@@ -266,6 +337,7 @@ def run(args, service: Service) -> int:
                 "connections": service.store.connections(),
                 "tokens": service.store.tokens(),
                 "verification_issues": service.coverage_issues(),
+                "identities": service.fleet.identities(),
             }
         )
     else:
