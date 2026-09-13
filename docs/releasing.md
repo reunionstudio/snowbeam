@@ -33,7 +33,7 @@ generated from that exact source archive and locked runtime dependencies.
 
 ## Publish the checked artifacts
 
-The first alpha uses local publication. GitHub Actions are supplied as
+Alpha releases currently use local publication. GitHub Actions are supplied as
 [setup templates](github-actions/README.md) while workflow authorization is
 pending. Hosted Linux/macOS CI is not yet enabled or validated.
 
@@ -70,14 +70,15 @@ announce GitHub releases; the tap must be updated before Homebrew can install on
 
 The **Update and restart** button only upgrades an installation from
 `reunionstudio/tap`. It checks package identity and version, delegates installation
-to Homebrew, and verifies the installed version before reopening the app. A live
-button upgrade between two published versions still needs validation. Linux uv
-installations currently show release notices and manual reinstallation commands.
+to Homebrew, and verifies the installed version before reopening the app. The
+official-tap button upgrade from 0.2.0a1 to 0.2.0a2 passed on macOS ARM64 with an
+isolated inventory. Linux uv installations currently show release notices and
+manual reinstallation commands.
 
 The package manager preserves configuration and the local SQLite cache outside
 the installed package. Test upgrades with synthetic retained configuration,
 inventory, and operation history. See `tools/check_upgrade.py` and the
-[validation record](releases/0.2.0a1-validation.md).
+[validation record](releases/0.2.0a2-validation.md).
 
 ## Optional distribution channels
 
@@ -104,7 +105,7 @@ account-bound plan. Record sanitized results and tool versions:
 | Workload identity | Authenticate each supported provider/runtime combination | Pending |
 | Omarchy | Install, launch, update, and remove the terminal launcher on a real desktop | Pending |
 | Desktop reminders | Deliver a notification through macOS launchd and Linux systemd, then remove the job | Pending |
-| Distribution | Hosted Linux/macOS CI, Intel Mac installation, and an official-tap button upgrade between releases | Pending |
+| Distribution | Hosted Linux/macOS CI and Intel Mac installation | Pending; official-tap button upgrade passed on macOS ARM64 |
 
 Automated test doubles and app captures do not replace live evidence. A stable
 release needs a support matrix based on completed validation.
