@@ -3,6 +3,18 @@
 Versions follow Python package versioning. Pre-release tags match package versions
 with a `v` prefix. This file records user-visible changes and known limitations.
 
+## 0.2.0a4 — 2026-09-13
+
+- Offer **Clone from** at the top of the blank Add connection form. Selecting a
+  source fills its editable settings and suggests an available name.
+- Add **Clone** (Shift+`c`) for the selected connection, opening the same workflow
+  with the source already selected. Keep the source selector and Save/Cancel
+  controls visible while the fields scroll.
+- Support `connections add NAME --clone-from SOURCE` and
+  `connections clone SOURCE NAME` with field overrides on the CLI.
+- Copy saved connection settings without duplicating credential files, secrets,
+  vault bindings, environment overrides, default status, or verification evidence.
+
 ## 0.2.0a3 — 2026-09-13
 
 - Use **Organizations** for the tree heading and **Accounts** for the CLI inventory

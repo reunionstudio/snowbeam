@@ -48,6 +48,38 @@ def test_offline_cli_add_edit_default_remove_round_trip(tmp_path, capsys):
     assert main(args + ["connections", "remove", "dev", "--yes"]) == 0
 
 
+def test_cli_clone_and_add_from_source_create_independent_unverified_profiles(service, capsys):
+    service.config.save("work", {"role": "ANALYST", "token_file_path": "/tokens/original"})
+    service.config.set_default("work")
+    service.refresh("work")
+    original = service.config.profile("work", environment=False).settings
+    calls = list(service.client.calls)
+    args = ["--snow-config", str(service.config.path), "--state-dir", str(service.store.directory)]
+    assert main(args + ["connections", "clone", "work", "work-copy", "--user", "BOB"]) == 0
+    assert (
+        main(args + ["connections", "add", "reporting", "--clone-from", "work", "--role", "READER"])
+        == 0
+    )
+    assert service.config.profile("work-copy").settings == {
+        "account": "ACME-PROD",
+        "user": "BOB",
+        "authenticator": "PROGRAMMATIC_ACCESS_TOKEN",
+        "role": "ANALYST",
+    }
+    assert service.config.profile("reporting").settings["role"] == "READER"
+    assert service.config.profile("work", environment=False).settings == original
+    assert service.config.profile("work").is_default
+    copied = next(c for c in service.store.connections() if c["name"] == "work-copy")
+    assert copied["status"] == "not_checked"
+    assert copied["account_id"] is None and copied["token_name"] is None
+    assert service.client.calls == calls
+    before = service.config.source.read_bytes()
+    assert main(args + ["connections", "clone", "work", "work"]) == 2
+    assert main(args + ["connections", "add", "missing-copy", "--clone-from", "missing"]) == 2
+    assert service.config.source.read_bytes() == before
+    assert "synthetic" not in capsys.readouterr().err
+
+
 def test_notification_deduplication_and_failed_delivery(service, monkeypatch):
     account = service.store.connected(service.config.profile("work"), IDENTITY)
     service.store.save_tokens(

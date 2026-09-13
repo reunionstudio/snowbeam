@@ -149,6 +149,16 @@ class Config:
                 return profile
         raise ConfigError(f"Connection {name!r} does not exist in {self.source}.")
 
+    def clone_settings(self, name: str) -> dict[str, str]:
+        """Copy editable settings from disk, leaving authentication material behind."""
+        settings = {
+            key: value
+            for key, value in self.profile(name, environment=False).settings.items()
+            if key not in {"token_file_path", "private_key_file"}
+        }
+        settings.setdefault("authenticator", "snowflake")
+        return settings
+
     @contextmanager
     def _edit(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)

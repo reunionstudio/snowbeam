@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -41,61 +43,134 @@ def literal(value: object, style: str = "") -> Text:
 class ConnectionForm(ModalScreen[bool]):
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, config: Config, name: str | None = None):
+    def __init__(self, config: Config, name: str | None = None, *, clone_from: str | None = None):
         super().__init__()
         self.config = config
         self.name_to_edit = name
-        self.values = config.profile(name, environment=False).settings if name else {}
+        self.clone_from = clone_from
+        self.sources = [] if name else config.profiles(environment=False)
+        self.suggested_name = self.clone_name(clone_from) if clone_from else ""
+        self.values = (
+            config.profile(name, environment=False).settings
+            if name
+            else config.clone_settings(clone_from)
+            if clone_from
+            else {}
+        )
+        self.AUTO_FOCUS = "#field-account" if name else "#clone-from"
+        if not name and not self.sources:
+            self.AUTO_FOCUS = "#field-name"
+
+    def clone_name(self, source: str) -> str:
+        base = re.sub(r"[^A-Za-z0-9_.-]+", "-", source).strip("-_.") or "connection"
+        names = {profile.name for profile in self.sources}
+        number = 1
+        while True:
+            suffix = "-copy" if number == 1 else f"-copy-{number}"
+            name = base[: 128 - len(suffix)] + suffix
+            if name not in names:
+                return name
+            number += 1
 
     def compose(self) -> ComposeResult:
-        with VerticalScroll(classes="dialog"):
+        with Vertical(classes="dialog"):
             yield Label(
-                "Edit connection" if self.name_to_edit else "Add connection", classes="dialog-title"
+                "Edit connection" if self.name_to_edit else "Add connection",
+                classes="dialog-title",
             )
-            yield Label("Name")
-            yield Input(
-                value=self.name_to_edit or "", id="field-name", disabled=bool(self.name_to_edit)
-            )
-            for field, label in (
-                ("account", "Account identifier (organization-account)"),
-                ("user", "Snowflake username"),
-            ):
-                yield Label(label)
-                yield Input(value=self.values.get(field, ""), id=f"field-{field}")
-            yield Label("Authentication")
-            auth = self.values.get("authenticator", "externalbrowser")
-            methods = list(dict.fromkeys([*AUTH_METHODS, auth]))
-            yield Select(
-                [(value, value) for value in methods],
-                value=auth,
-                allow_blank=False,
-                id="field-authenticator",
-            )
-            for field, label in (
-                ("role", "Role (optional)"),
-                ("warehouse", "Warehouse (optional)"),
-                ("token_file_path", "PAT file path (for token authentication)"),
-                ("private_key_file", "Private key file path (for key-pair authentication)"),
-                ("database", "Database (optional)"),
-                ("schema", "Schema (optional)"),
-                ("host", "Host override (optional; retain private connectivity settings)"),
-                (
-                    "workload_identity_provider",
-                    "Workload identity provider (AWS, AZURE, GCP, OIDC)",
-                ),
-            ):
-                yield Label(label)
-                yield Input(value=self.values.get(field, ""), id=f"field-{field}")
-            yield Static(
-                "Existing credentials and other settings are preserved. "
-                "Enter file paths, not token values.",
-                classes="muted",
-                markup=False,
-            )
+            if not self.name_to_edit:
+                yield Label("Clone from (optional)")
+                yield Select(
+                    [(literal(profile.name), profile.name) for profile in self.sources],
+                    value=self.clone_from or Select.BLANK,
+                    prompt="Start with a blank connection",
+                    id="clone-from",
+                    disabled=not self.sources,
+                )
+                yield Static(
+                    "Choose an existing connection, then edit the details below."
+                    if self.sources
+                    else "No saved connections yet. Enter your first connection below.",
+                    classes="muted clone-invitation",
+                    markup=False,
+                )
+            with VerticalScroll(id="connection-fields"):
+                yield Label("Name")
+                yield Input(
+                    value=self.name_to_edit or self.suggested_name,
+                    id="field-name",
+                    disabled=bool(self.name_to_edit),
+                )
+                for field, label in (
+                    ("account", "Account identifier (organization-account)"),
+                    ("user", "Snowflake username"),
+                ):
+                    yield Label(label)
+                    yield Input(value=self.values.get(field, ""), id=f"field-{field}")
+                yield Label("Authentication")
+                auth = self.values.get("authenticator", "externalbrowser")
+                methods = list(dict.fromkeys([*AUTH_METHODS, auth]))
+                yield Select(
+                    [(value, value) for value in methods],
+                    value=auth,
+                    allow_blank=False,
+                    id="field-authenticator",
+                )
+                for field, label in (
+                    ("role", "Role (optional)"),
+                    ("warehouse", "Warehouse (optional)"),
+                    ("token_file_path", "PAT file path (for token authentication)"),
+                    ("private_key_file", "Private key file path (for key-pair authentication)"),
+                    ("database", "Database (optional)"),
+                    ("schema", "Schema (optional)"),
+                    ("host", "Host override (optional; retain private connectivity settings)"),
+                    (
+                        "workload_identity_provider",
+                        "Workload identity provider (AWS, AZURE, GCP, OIDC)",
+                    ),
+                ):
+                    yield Label(label)
+                    yield Input(value=self.values.get(field, ""), id=f"field-{field}")
+                yield Static(
+                    "Existing credentials and other settings are preserved. "
+                    "Enter file paths, not token values."
+                    if self.name_to_edit
+                    else "Cloning copies connection settings. Credentials and vault bindings "
+                    "must be configured separately.",
+                    classes="muted",
+                    markup=False,
+                )
             yield Static("", id="form-error", markup=False)
             with Horizontal(classes="dialog-actions"):
                 yield Button("Save", variant="primary", id="save")
                 yield Button("Cancel", id="cancel")
+
+    @on(Select.Changed, "#clone-from")
+    def choose_source(self, event: Select.Changed) -> None:
+        source = str(event.value) if event.value is not Select.BLANK else None
+        if source == self.clone_from:
+            return
+        try:
+            values = self.config.clone_settings(source) if source else {}
+        except (ConfigError, OSError) as exc:
+            self.query_one("#form-error", Static).update(safe_text(exc))
+            event.select.value = self.clone_from or Select.BLANK
+            return
+        name = self.query_one("#field-name", Input)
+        suggested = self.clone_name(source) if source else ""
+        if not name.value or name.value == self.suggested_name:
+            name.value = suggested
+        self.clone_from, self.suggested_name, self.values = source, suggested, values
+        auth = values.get("authenticator", "externalbrowser")
+        authentication = self.query_one("#field-authenticator", Select)
+        authentication.set_options(
+            [(method, method) for method in dict.fromkeys([*AUTH_METHODS, auth])]
+        )
+        authentication.value = auth
+        for field in FIELDS:
+            if field != "authenticator":
+                self.query_one(f"#field-{field}", Input).value = values.get(field, "")
+        self.query_one("#form-error", Static).update("")
 
     @on(Button.Pressed, "#save")
     def save(self) -> None:
@@ -230,6 +305,8 @@ class Snowbeam(App):
     }
     .confirm { height: auto; max-height: 90%; }
     .evidence { width: 96; }
+    #connection-fields { height: 1fr; }
+    .muted.clone-invitation { margin-top: 0; }
     #identity-search { height: 3; margin-bottom: 1; }
     .dialog-title { text-style: bold; color: #a6dbf2; margin-bottom: 1; height: auto; }
     .dialog Label { margin-top: 1; }
@@ -244,6 +321,7 @@ class Snowbeam(App):
         ("r", "refresh_all", "Refresh all"),
         ("t", "refresh_selected", "Test selected"),
         ("a", "add", "Add"),
+        ("shift+c", "clone", "Clone"),
         ("e", "edit", "Edit"),
         ("n", "labels", "Alias / notes"),
         ("b", "bind", "Associate PAT"),
@@ -318,6 +396,7 @@ class Snowbeam(App):
         with Horizontal(id="toolbar"):
             yield Button("Refresh all", id="refresh", variant="primary")
             yield Button("Add", id="add")
+            yield Button("Clone", id="clone")
             yield Button("Edit", id="edit")
             yield Button("Default", id="default")
             yield Button("Remove", id="remove")
@@ -592,10 +671,15 @@ class Snowbeam(App):
         self.show_active_details()
 
     def _buttons(self) -> None:
-        for button_id in ("refresh", "add", "edit", "default", "remove"):
+        for button_id in ("refresh", "add", "clone", "edit", "default", "remove"):
             self.query_one(f"#{button_id}", Button).disabled = self.busy or (
                 (button_id == "edit" and not (self.current() or self.current_identity()))
-                or (button_id in {"default", "remove"} and not self.current())
+                or (button_id in {"clone", "default", "remove"} and not self.current())
+                or (
+                    button_id == "clone"
+                    and self.current()
+                    and self.current()["config_path"] != str(self.service.config.path)
+                )
             )
 
     @on(Tree.NodeSelected, "#inventory")
@@ -778,7 +862,27 @@ class Snowbeam(App):
             if self.query_one(TabbedContent).active == "identities-tab":
                 self.push_screen(IdentityForm(self.service.fleet), self.reload)
             else:
-                self.push_screen(ConnectionForm(self.service.config), self.reload)
+                try:
+                    self.push_screen(ConnectionForm(self.service.config), self.reload)
+                except (ConfigError, OSError) as exc:
+                    self.message(str(exc))
+
+    @on(Button.Pressed, "#clone")
+    def action_clone(self) -> None:
+        if len(self.screen_stack) > 1:
+            return
+        if not self.busy and (row := self.current()):
+            if row["config_path"] != str(self.service.config.path):
+                self.message(
+                    "Open this connection's configuration with --snow-config before cloning it."
+                )
+                return
+            try:
+                self.push_screen(
+                    ConnectionForm(self.service.config, clone_from=row["name"]), self.reload
+                )
+            except (ConfigError, OSError) as exc:
+                self.message(str(exc))
 
     @on(Button.Pressed, "#edit")
     def action_edit(self) -> None:

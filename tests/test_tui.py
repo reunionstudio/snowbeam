@@ -120,6 +120,117 @@ async def test_add_edit_and_remove_through_actual_forms(tmp_path):
         assert "new-profile" not in [p.name for p in service.config.profiles()]
 
 
+async def test_add_invites_cloning_and_source_changes_keep_a_custom_name(tmp_path, monkeypatch):
+    service = demo_service(tmp_path)
+    service.config.save(
+        "development", {"token_file_path": "/tokens/source", "warehouse": "COMPUTE"}
+    )
+    monkeypatch.setenv("SNOWFLAKE_CONNECTIONS_DEVELOPMENT_WAREHOUSE", "ENVIRONMENT_OVERRIDE")
+    app = Snowbeam(service, auto_refresh=False)
+    before = service.config.source.read_bytes()
+    async with app.run_test(size=(100, 40)) as pilot:
+        await pilot.press("a")
+        await pilot.pause()
+        form = app.screen
+        source = form.query_one("#clone-from", Select)
+        assert source.value is Select.BLANK
+        assert source.region.y < form.query_one("#field-name", Input).region.y
+        assert form.query_one("#field-account", Input).value == ""
+        source.value = "development"
+        await pilot.pause()
+        assert form.query_one("#field-name", Input).value == "development-copy"
+        assert form.query_one("#field-account", Input).value == "ACME-DEVELOPMENT"
+        assert form.query_one("#field-warehouse", Input).value == "COMPUTE"
+        assert form.query_one("#field-token_file_path", Input).value == ""
+        form.query_one("#field-name", Input).value = "my-reporting"
+        source.value = "northwind"
+        await pilot.pause()
+        assert form.query_one("#field-name", Input).value == "my-reporting"
+        assert form.query_one("#field-account", Input).value == "NORTHWIND-ANALYTICS"
+        assert form.query_one("#field-authenticator", Select).value == "externalbrowser"
+        source.value = Select.BLANK
+        await pilot.pause()
+        assert form.query_one("#field-name", Input).value == "my-reporting"
+        assert form.query_one("#field-account", Input).value == ""
+        assert form.query_one("#field-warehouse", Input).value == ""
+        await pilot.press("escape")
+        assert service.config.source.read_bytes() == before
+
+
+async def test_clone_action_prefills_and_creates_a_new_connection(tmp_path):
+    service = demo_service(tmp_path)
+    service.config.save("development-copy", {"account": "ACME-DEV", "user": "OLD"}, create=True)
+    source_settings = service.config.profile("development", environment=False).settings
+    original_fleet = service.fleet.config.path.read_bytes()
+    app = Snowbeam(service, auto_refresh=False)
+    async with app.run_test(size=(80, 24)) as pilot:
+        app.selected_connection = service.config.profile("development").key
+        app.render_data()
+        await pilot.pause()
+        assert not app.query_one("#clone", Button).disabled
+        assert app.query_one("#updates", Button).region.right <= 80
+        await pilot.press("shift+c")
+        await pilot.pause()
+        form = app.screen
+        assert isinstance(form, ConnectionForm)
+        assert form.query_one("#clone-from", Select).value == "development"
+        assert form.query_one("#field-name", Input).value == "development-copy-2"
+        assert form.query_one("#field-user", Input).value == "JANE"
+        form.query_one("#field-user", Input).value = "BOB"
+        form.query_one("#field-role", Input).value = "READER"
+        form.query_one("#save", Button).focus()
+        await pilot.pause()
+        assert form.query_one("#save", Button).region.bottom <= 24
+        await pilot.press("enter")
+        await pilot.pause()
+        cloned = service.config.profile("development-copy-2", environment=False)
+        assert cloned.settings == source_settings | {"user": "BOB", "role": "READER"}
+        assert not cloned.is_default
+        assert service.config.profile("development", environment=False).settings == source_settings
+        assert service.fleet.config.path.read_bytes() == original_fleet
+        row = next(c for c in service.store.connections() if c["name"] == cloned.name)
+        assert row["status"] == "not_checked" and row["token_name"] is None
+        app.query_one(TabbedContent).active = "tokens-tab"
+        await pilot.pause()
+        assert app.query_one("#clone", Button).disabled
+        app.action_clone()
+        assert not isinstance(app.screen, ConnectionForm)
+
+
+async def test_removed_clone_source_reports_error_without_losing_the_form(service):
+    app = Snowbeam(service, auto_refresh=False)
+    async with app.run_test() as pilot:
+        app.action_add()
+        await pilot.pause()
+        service.config.remove("work")
+        form = app.screen
+        form.query_one("#field-name", Input).value = "my-new-connection"
+        form.query_one("#clone-from", Select).value = "work"
+        await pilot.pause()
+        assert "does not exist" in str(form.query_one("#form-error", Static).render())
+        assert form.query_one("#clone-from", Select).value is Select.BLANK
+        assert form.query_one("#field-name", Input).value == "my-new-connection"
+        await pilot.press("escape")
+
+
+async def test_clone_does_not_confuse_same_names_in_different_configs(service, tmp_path):
+    from snowbeam.config import Config
+
+    other = Config(tmp_path / "other/config.toml")
+    other.save("work", {"account": "OTHER-ACCOUNT", "user": "OTHER"}, create=True)
+    service.store.sync_profiles(other.profiles(), other.path)
+    app = Snowbeam(service, auto_refresh=False)
+    async with app.run_test() as pilot:
+        app.selected_connection = other.profile("work").key
+        app.render_data()
+        await pilot.pause()
+        assert app.query_one("#clone", Button).disabled
+        app.action_clone()
+        await pilot.pause()
+        assert not isinstance(app.screen, ConnectionForm)
+        assert "--snow-config" in str(app.query_one("#message", Static).render())
+
+
 async def test_selected_refresh_is_nonblocking_and_binding_is_explicit(tmp_path):
     service = demo_service(tmp_path)
     app = Snowbeam(service, auto_refresh=False)

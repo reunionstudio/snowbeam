@@ -35,7 +35,25 @@ async def capture() -> None:
             app.action_labels()
             await pilot.pause()
             app.save_screenshot("aliases.svg", path=str(output))
-    for name in ("snowbeam.svg", "identities.svg", "attention.svg", "updates.svg", "aliases.svg"):
+            await pilot.press("escape")
+            app.query_one(TabbedContent).active = "connections-tab"
+            await pilot.pause()
+            app.action_add()
+            await pilot.pause()
+            app.save_screenshot("add-connection.svg", path=str(output))
+            await pilot.press("escape")
+            app.action_clone()
+            await pilot.pause()
+            app.save_screenshot("clone-connection.svg", path=str(output))
+    for name in (
+        "snowbeam.svg",
+        "identities.svg",
+        "attention.svg",
+        "updates.svg",
+        "aliases.svg",
+        "add-connection.svg",
+        "clone-connection.svg",
+    ):
         path = output / name
         path.write_text("\n".join(line.rstrip() for line in path.read_text().splitlines()) + "\n")
 

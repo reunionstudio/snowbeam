@@ -45,6 +45,49 @@ def test_environment_is_visible_but_not_written_back(service, monkeypatch):
     assert "OVERRIDE_ROLE" not in service.config.source.read_text()
 
 
+def test_clone_copies_editable_disk_settings_without_credentials(tmp_path, monkeypatch):
+    main = tmp_path / "config.toml"
+    main.write_text('default_connection_name = "work"\n')
+    shared = tmp_path / "connections.toml"
+    original = (
+        '# Preserve the source\n[work]\naccount="ACME-PROD"\nuser="ALICE"\n'
+        'role="ANALYST"\nwarehouse="COMPUTE"\ndatabase="REPORTS"\nschema="PUBLIC"\n'
+        'host="account.example.test"\nauthenticator="SNOWFLAKE_JWT"\n'
+        'password="synthetic-password"\ntoken="synthetic-token"\n'
+        'private_key="synthetic-key"\nprivate_key_path="/keys/source.pem"\n'
+        'token_file_path="/tokens/source"\ncustom_secret="synthetic-custom"\n'
+    )
+    shared.write_text(original)
+    config = Config(main)
+    monkeypatch.setenv("SNOWFLAKE_CONNECTIONS_WORK_ACCOUNT", "OTHER-ACCOUNT")
+    settings = config.clone_settings("work")
+    assert settings == {
+        "account": "ACME-PROD",
+        "user": "ALICE",
+        "role": "ANALYST",
+        "warehouse": "COMPUTE",
+        "database": "REPORTS",
+        "schema": "PUBLIC",
+        "host": "account.example.test",
+        "authenticator": "SNOWFLAKE_JWT",
+    }
+    assert shared.read_text() == original
+    config.save("new-work", settings | {"user": "BOB"}, create=True)
+    document = tomlkit.parse(shared.read_text())
+    assert document["work"] == tomlkit.parse(original)["work"]
+    assert document["new-work"] == settings | {"user": "BOB"}
+    assert "# Preserve the source" in shared.read_text()
+    assert shared.with_name("connections.toml.snowbeam.bak").read_text() == original
+    assert config.profile("work").is_default
+    assert not config.profile("new-work").is_default
+    assert stat.S_IMODE(shared.stat().st_mode) == 0o600
+
+
+def test_clone_retains_implicit_authentication_method(service):
+    service.config.save("work", {"authenticator": ""})
+    assert service.config.clone_settings("work")["authenticator"] == "snowflake"
+
+
 def test_default_and_remove_use_shared_file(tmp_path):
     main = tmp_path / "config.toml"
     main.write_text("")

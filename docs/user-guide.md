@@ -11,6 +11,7 @@ A terminal of 120 columns is comfortable; 80 × 24 works with scrolling.
 | Key or control | Action |
 | --- | --- |
 | `a` / Add | Add a connection; on Identities, record a new agent from a template |
+| Shift+`c` / Clone | Start a new connection from the selected connection's editable settings |
 | `e` / Edit | Edit connection settings or identity labels |
 | `n` / Alias / notes | Name and annotate the selected organization or account locally |
 | Default | Make the selected profile the Snowflake CLI default |
@@ -23,7 +24,38 @@ A terminal of 120 columns is comfortable; 80 × 24 works with scrolling.
 | Enter / `p` on Identities | Read full evidence / preview a managed agent lifecycle action |
 | `q` | Quit |
 
-New profiles default to browser SSO. The editor also supports PAT and key-pair
+## Add or clone a connection
+
+**Add** (`a`) opens a blank form with **Clone from** at the top. Choose an existing
+connection to fill in its settings, then edit the details you want to change.
+Or select a connection in the inventory and choose **Clone** (Shift+`c`) to open
+the same form with that source already selected. Sources come from the current
+Snowflake configuration. Open a different configuration with `--snow-config` to
+clone its profiles.
+
+Snowbeam suggests an available name such as `work-copy`. Your custom name stays
+in place if you change the source. Choosing **Start with a blank connection**
+clears the copied settings. **Save** and **Cancel** stay visible while the fields
+scroll, including in an 80 × 24 terminal.
+
+Cloning uses saved account, user, authentication method, role, warehouse, database,
+schema, host, and workload-provider settings. It leaves credential file paths
+blank and does not copy secrets, vault bindings, environment overrides, or options
+outside the editor. Configure authentication for the new connection separately.
+The original connection, its comments, and the default connection stay intact.
+The new profile is unverified until a successful refresh; cloning does not create
+a new Snowflake user or grant access.
+
+The CLI offers the same copy-and-override behavior:
+
+```sh
+snowbeam connections add reporting --clone-from work --warehouse REPORTING_WH
+snowbeam connections clone work another-client --account OTHERORG-PROD --user JANE
+```
+
+![Add a connection from an existing setup, using synthetic data](clone-connection.svg)
+
+Blank profiles default to browser SSO. The editor also supports PAT and key-pair
 authentication through credential **file paths**, plus WIF provider selection.
 For managed agents, Snowbeam can create and rotate credentials through an
 account-bound plan and verified vault write. See the
@@ -32,6 +64,8 @@ runtime handoff, and recovery. Existing password
 and other authentication settings are preserved, but Snowbeam does not offer
 password input. A login needing a terminal prompt should be completed with
 Snowflake CLI first; browser SSO can open your browser during a manual refresh.
+
+## Refresh connections
 
 The app checks which eligible connections are due on startup and every minute
 while open. Each connection refreshes hourly by default. PAT, key-pair, and

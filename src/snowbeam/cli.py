@@ -95,9 +95,13 @@ def parser() -> argparse.ArgumentParser:
     actions = connections.add_subparsers(dest="connection_action")
     listing = actions.add_parser("list")
     listing.add_argument("--json", action="store_true")
-    for action in ("add", "edit"):
+    for action in ("add", "edit", "clone"):
         edit = actions.add_parser(action)
+        if action == "clone":
+            edit.add_argument("clone_from", help="Existing connection to copy settings from")
         edit.add_argument("name")
+        if action == "add":
+            edit.add_argument("--clone-from", help="Prefill editable settings from this connection")
         for field in FIELDS:
             edit.add_argument("--" + field.replace("_", "-"))
     for action in ("default", "remove"):
@@ -304,13 +308,21 @@ def run(args, service: Service) -> int:
         return 2 if result.issues else 0
     if args.command == "connections":
         action = args.connection_action or "list"
-        if action in ("add", "edit"):
-            settings = {
-                field: getattr(args, field) for field in FIELDS if getattr(args, field) is not None
-            }
-            if action == "add":
+        if action in ("add", "edit", "clone"):
+            source = getattr(args, "clone_from", None)
+            settings = service.config.clone_settings(source) if source else {}
+            settings.update(
+                {
+                    field: getattr(args, field)
+                    for field in FIELDS
+                    if getattr(args, field) is not None
+                }
+            )
+            if action in ("add", "clone"):
                 settings.setdefault("authenticator", "externalbrowser")
-            service.config.save(args.name, settings, create=action == "add")
+            service.config.save(args.name, settings, create=action != "edit")
+            if source:
+                print("Copied editable settings. Configure credentials for the new connection.")
         elif action == "default":
             service.config.set_default(args.name)
         elif action == "remove":
