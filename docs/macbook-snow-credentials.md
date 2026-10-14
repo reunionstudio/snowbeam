@@ -1,14 +1,17 @@
 # MacBook Snowflake credential hygiene
 
 Snowbeam helps when you run AI agents on the same macOS user account you use for
-consulting work. The Snowflake CLI (`snow`) reads `PRIVATE_KEY_PASSPHRASE` from
-the environment. Exporting that variable in `~/.zshrc` lets every child process
-(including agents) authenticate with your key-pair connections without an extra
-prompt.
+consulting work. Snowbeam is an **inventory and control plane**, not a vault
+that hands admin passphrases to every child process. See
+[control plane](control-plane.md) for admin vs agent connections and proofs.
 
-Snowbeam does **not** lock your `connections.toml`. You should keep running
-`snow connection test -c NAME` and other normal `snow` commands without a
-Snowbeam login in front of them.
+The Snowflake CLI (`snow`) reads `PRIVATE_KEY_PASSPHRASE` from the environment.
+Exporting that variable in `~/.zshrc` lets every child process (including
+agents) authenticate with your key-pair connections without an extra prompt.
+
+Snowbeam does **not** lock your master `connections.toml`. For agents, use
+**agent-classified** connections and `snowbeam snow` with `SNOWBEAM_AGENT_*`
+proofs so admin profiles never appear in the child config view.
 
 ## 1. Scan this machine
 
@@ -27,18 +30,25 @@ stored beside key paths, unencrypted private keys, shared key files, missing or
 foreign key paths, loose file permissions, secret exports in your shell startup
 files, and secret variables in the current environment.
 
-## 2. Store passphrases in Keychain
+## 2. Classify connections
 
-Naming convention: **service** `snowbeam.<connection>`, **account** `<connection>`
-(where `<connection>` is the name in `connections.toml`).
+```sh
+snowbeam connections classify work --role admin
+snowbeam connections classify agent-bot --role agent
+```
+
+Unlisted names behave as **admin** (agents cannot see or use them through
+Snowbeam).
+
+## 3. Store admin passphrases in Keychain
+
+Only **admin** connections:
 
 ```sh
 snowbeam secrets set-passphrase work
 ```
 
-This prompts with no echo and writes to Keychain. Snowbeam does not use
-1Password/Bitwarden for this (separate from optional vault integration for
-managed agents).
+Naming convention: **service** `snowbeam.<connection>`, **account** `<connection>`.
 
 Check status:
 
@@ -60,32 +70,40 @@ command line):
 security add-generic-password -s "snowbeam.work" -a "work" -T "$(which snowbeam)" -T "$(which snow)"
 ```
 
-## 3. Run snow with a child-only passphrase
+Consider a **decoy** `export PRIVATE_KEY_PASSPHRASE=decoy-...` in the shell so
+agents never see a real value; Snowbeam strips it and unlocks admin keys only on
+a real TTY.
 
-Snowbeam spawns `snow` with `PRIVATE_KEY_PASSPHRASE` set only in the child
-process and strips `PRIVATE_KEY_PASSPHRASE`, `SNOWFLAKE_PASSWORD`, and related
-variables from the environment it passes along:
+## 4. Register agents and run snow
+
+```sh
+snowbeam agents plan-register my-agent
+snowbeam agents register my-agent --approve DIGEST
+eval "$(snowbeam agents proof my-agent | jq -r '"export \(.SNOWBEAM_AGENT_ID)='"'"'" + .SNOWBEAM_AGENT_ID + "'"'"'; export \(.SNOWBEAM_AGENT_PROOF)='"'"'" + .SNOWBEAM_AGENT_PROOF + "'"'"'"')"
+snowbeam snow connection test -c agent-bot
+```
+
+Humans run admin connections from an interactive terminal (passphrase challenge +
+rate limiting). Agents get **silent** generic failure if they target admin
+connections.
+
+Snowbeam spawns `snow` with `SNOWFLAKE_HOME` pointing at a filtered view and
+`PRIVATE_KEY_PASSPHRASE` set only in the child when allowed.
 
 ```sh
 snowbeam snow connection test -c work
 snowbeam snow sql -q "SELECT CURRENT_USER()"
 ```
 
-If no Keychain entry exists for that connection, `snowbeam snow` behaves like
-plain `snow` (no passphrase injected).
-
-## 4. Optional shell alias
-
-Install a wrapper that delegates to `snowbeam snow`:
+## 5. Optional shell alias
 
 ```sh
 snowbeam local keychain-wrapper >> ~/.zshrc
-# restart the terminal, or: source ~/.zshrc
 ```
 
 Then use `snow` as usual; it forwards to `snowbeam snow`.
 
-## 5. Remove profile exports
+## 6. Remove profile exports
 
 Edit `~/.zshrc`, `~/.zprofile`, and any other startup files. Remove lines such as:
 
@@ -97,21 +115,23 @@ Restart Terminal, IDEs, and agent processes so they do not inherit the old
 export. Run `snowbeam local scan` again until environment and shell checks are
 clean.
 
-## 6. Verify
+## 7. Verify
 
 ```sh
 snowbeam local scan
 snowbeam snow connection test -c work
 ```
 
-You can still run `/usr/local/bin/snow` directly when you do not need Keychain
-injection; prefer `snowbeam snow` for key-pair connections that use stored
-passphrases.
+You can still run `/usr/local/bin/snow` directly against the full config when you
+accept the risk; prefer `snowbeam snow` for governed paths.
 
 ## Limits (honest)
 
-An agent running as the **same macOS user** can still invoke `snowbeam snow` or
-`security find-generic-password` if Keychain access has already been granted.
-macOS may prompt when a **new** application reads an item. Stronger isolation
-means a separate OS user account, a sandbox, or a dedicated machine for agents —
-optional and outside Snowbeam’s scope.
+An agent running as the **same macOS user** can still read another agent's key
+file, delete lockout state, or invoke `security` if Keychain ACLs allow it.
+Stronger isolation means per-agent OS users, a broker service (see
+[control plane — open design](control-plane.md)), or a dedicated machine for
+agents.
+
+Touch ID / LocalAuthentication gating for Keychain is documented but not fully
+automated in Snowbeam yet; use Keychain access controls manually where needed.

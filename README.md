@@ -9,6 +9,12 @@ accounts. Snowbeam is a local terminal app built first for
 [Omarchy](https://omarchy.org/manual/), with Linux and macOS support.
 
 Give each autonomous agent its own identity and only the access its job needs.
+Snowbeam is a local **inventory and control plane** — not a shared passphrase
+vault for agents on your OS account. Classify connections as human **admin** or
+scoped **agent**, require an interactive admin unlock before child-only
+passphrases, and authenticate agents with short-lived proofs. See
+[control plane](docs/control-plane.md).
+
 Keep client accounts separate, inspect policy evidence, and manage individual
 credentials through reviewed plans. Snowflake enforces access; you save managed
 tokens and private keys in your own password manager; your chosen runtime runs
@@ -26,8 +32,10 @@ integration** (`snowbeam preferences vault-integration on`) restores automated
 individual PATs or key pairs (plus workload-identity binding), with runtime
 export and verification. Use the [identity and security guide](docs/security.md)
 with Snowflake CLI. On a shared MacBook, use [local credential
-hygiene](docs/macbook-snow-credentials.md) (`local scan`, `secrets
-set-passphrase`, `snowbeam snow`). Automated tests mock Snowflake and vault
+hygiene](docs/macbook-snow-credentials.md) and the
+[control plane](docs/control-plane.md) (`connections classify`, `agents proof`,
+`local scan`, `secrets set-passphrase`, `snowbeam snow`). Automated tests mock
+Snowflake and vault
 adapters; your
 accounts still need a deliberate trial. Cloud workload authentication on a real
 cloud runtime and Omarchy desktop validation remain pending. See

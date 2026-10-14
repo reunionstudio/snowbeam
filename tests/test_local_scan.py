@@ -3,6 +3,7 @@ import os
 import pytest
 
 from snowbeam.config import Config
+from snowbeam.connection_access import CLASS_AGENT, ConnectionAccess
 from snowbeam.local_scan import scan_exit_code, scan_local_machine
 from snowbeam.os_secrets import keychain_service
 from snowbeam.snow_runner import (
@@ -35,8 +36,7 @@ def snow_config(tmp_path, monkeypatch):
 def test_scan_finds_plaintext_password_and_unencrypted_key(snow_config, tmp_path):
     shared = snow_config.source
     shared.write_text(
-        shared.read_text()
-        + f'\n[other]\naccount="X"\nuser="Y"\npassword="secret"\n'
+        shared.read_text() + f'\n[other]\naccount="X"\nuser="Y"\npassword="secret"\n'
         f'private_key_file="{snow_config.profile("work").settings["private_key_file"]}"\n'
     )
     report = scan_local_machine(snow_config)
@@ -45,7 +45,9 @@ def test_scan_finds_plaintext_password_and_unencrypted_key(snow_config, tmp_path
     assert "unencrypted_private_key" in checks
     assert "shared_key_file" in checks
     assert scan_exit_code(report) == 2
-    assert not any("password" in row["message"] and "secret" in row["message"] for row in report["findings"])
+    assert not any(
+        "password" in row["message"] and "secret" in row["message"] for row in report["findings"]
+    )
 
 
 def test_scan_finds_env_and_shell_export(snow_config, tmp_path, monkeypatch):
@@ -97,9 +99,12 @@ def test_run_snow_passes_exit_code_and_child_env(snow_config, monkeypatch):
             return "keychain-secret"
 
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/snow" if name == "snow" else None)
+    state = snow_config.path.parent.parent / "snowbeam-state"
+    ConnectionAccess(state).set_classification("work", CLASS_AGENT)
     code = run_snow(
         ["connection", "test", "-c", "work"],
         config=snow_config,
+        state_dir=state,
         store=Store(),
         executable="/usr/bin/snow",
         popen=fake_popen,

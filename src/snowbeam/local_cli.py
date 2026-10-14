@@ -57,15 +57,30 @@ def run_local_wrapper(args) -> int:
     return 0
 
 
-def run_snow_command(args, config: Config, executable: str | None) -> int:
-    return run_snow(args.snow_args, config=config, executable=executable)
+def run_snow_command(args, config: Config, executable: str | None, state_dir) -> int:
+    return run_snow(
+        args.snow_args,
+        config=config,
+        state_dir=state_dir,
+        executable=executable,
+        agent_id=getattr(args, "agent_id", None),
+        agent_proof=getattr(args, "agent_proof", None),
+    )
 
 
-def run_secrets(args, config: Config) -> int:
+def run_secrets(args, config: Config, state_dir) -> int:
+    from .connection_access import CLASS_ADMIN, ConnectionAccess
+
     store = default_secret_store()
     action = args.secrets_action
     if action == "set-passphrase":
         config.profile(args.connection)
+        access = ConnectionAccess(state_dir)
+        if access.classification(args.connection) != CLASS_ADMIN:
+            raise ValueError(
+                "Only admin-classified connections use Keychain passphrases. "
+                "Run: snowbeam connections classify NAME --role admin"
+            )
         first = getpass.getpass(f"Passphrase for connection {args.connection}: ")
         if not first:
             raise ValueError("An empty passphrase was not stored.")
@@ -131,7 +146,15 @@ def add_local_commands(commands) -> None:
 def add_snow_command(commands) -> None:
     snow = commands.add_parser(
         "snow",
-        help="Run the Snowflake CLI with a child-only PRIVATE_KEY_PASSPHRASE when stored",
+        help="Run snow with filtered config views and child-only admin unlock",
+    )
+    snow.add_argument(
+        "--agent-id",
+        help="Registered agent id (alternative to SNOWBEAM_AGENT_ID)",
+    )
+    snow.add_argument(
+        "--agent-proof",
+        help="Short-lived proof from snowbeam agents proof (or SNOWBEAM_AGENT_PROOF)",
     )
     snow.add_argument("snow_args", nargs=argparse.REMAINDER)
 
