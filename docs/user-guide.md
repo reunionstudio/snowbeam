@@ -58,7 +58,7 @@ snowbeam connections clone work another-client --account OTHERORG-PROD --user JA
 Blank profiles default to browser SSO. The editor also supports PAT and key-pair
 authentication through credential **file paths**, plus WIF provider selection.
 For managed agents, Snowbeam can create and rotate credentials through an
-account-bound plan and verified vault write. See the
+account-bound plan, human credential relay, and runtime verification. See the
 [identity and security guide](security.md) for setup, authorization,
 runtime handoff, and recovery. Existing password
 and other authentication settings are preserved, but Snowbeam does not offer

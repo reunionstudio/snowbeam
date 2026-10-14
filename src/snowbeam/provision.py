@@ -14,6 +14,7 @@ import uuid
 from contextlib import contextmanager
 
 from .config import Profile
+from .credential_relay import build_relay, vault_integration_enabled, verification_session
 from .fleet import digest, literal, qualified_quote, quote
 from .security import (
     AUTH_PROPERTIES,
@@ -26,7 +27,7 @@ from .security import (
 )
 from .snowflake import IDENTITY_SQL, SnowError
 from .store import iso
-from .vault import Vault, VaultError, credential_session, workload_session
+from .vault import Vault, VaultError
 from .workload import matches_workload, validate_workload, workload_sql
 
 
@@ -135,10 +136,15 @@ class Provisioner:
         return Inspector(self.service.client, profile, spec["organization"], spec["account"])
 
     def plan(self, identity: str, action: str = "provision") -> dict:
+        return self.plan_for_spec(self.managed_spec(identity), action, self.fleet.state(identity))
+
+    def plan_for_spec(
+        self, spec: dict, action: str = "provision", state: dict | None = None
+    ) -> dict:
         if action not in {"provision", "rotate", "retire-old", "revoke"}:
             raise ValueError("Unknown lifecycle action.")
-        spec = self.managed_spec(identity)
-        state = self.fleet.state(identity)
+        state = dict(state or {})
+        identity = spec["id"]
         if spec["auth"] == "WIF" and action in {"rotate", "retire-old"}:
             raise ValueError(
                 "The workload identity provider renews short-lived credentials. Use its "
@@ -177,6 +183,8 @@ class Provisioner:
             else:
                 if (
                     not state.get("credential_ref")
+                    and not state.get("credential_name")
+                    and not state.get("public_key_fp")
                     and state.get("credential_kind") != "WIF"
                     and not (action == "revoke" and state.get("created_user"))
                 ):
@@ -233,7 +241,20 @@ class Provisioner:
                 if action == "rotate":
                     self._assert_assignment(inspector, spec)
             if action == "retire-old":
-                if not state.get("previous_ref") or not state.get("runtime_verified_at"):
+                if (
+                    state.get("pending_name")
+                    or state.get("pending_ref")
+                    or state.get("pending_slot")
+                ):
+                    raise ValueError(
+                        "Verify the replacement credential from its runtime before retiring the "
+                        "previous credential."
+                    )
+                if not state.get("runtime_verified_at") or not (
+                    state.get("previous_ref")
+                    or state.get("previous_name")
+                    or state.get("previous_slot")
+                ):
                     raise ValueError(
                         "Verify the replacement credential from its runtime before retiring the "
                         "previous credential."
@@ -315,13 +336,21 @@ class Provisioner:
             ),
             "workload": validate_workload(spec) if spec["auth"] == "WIF" else None,
             "host": spec.get("host"),
-            "steps": self._steps(action, spec),
+            "steps": self._steps(action, spec, vault_integration_enabled(self.fleet.config.read())),
+            "credential_handoff": (
+                "vault"
+                if vault_integration_enabled(self.fleet.config.read())
+                and spec["auth"] not in {"WIF"}
+                else "human_relay"
+                if spec["auth"] not in {"WIF"}
+                else "workload"
+            ),
         }
         plan["approval"] = digest(plan)
         return plan
 
     @staticmethod
-    def _steps(action, spec):
+    def _steps(action, spec, vault_mode: bool = False):
         if action == "provision" and spec["auth"] == "WIF":
             return [
                 "Create a disabled SERVICE_AGENT user",
@@ -331,16 +360,27 @@ class Provisioner:
                 "Verify on the declared runtime; cloud IAM is managed separately",
             ]
         if action == "provision":
+            cred = (
+                "Create an individual credential and verify its vault item"
+                if vault_mode
+                else "Create an individual credential and relay it to the operator once"
+            )
             return [
                 "Create a disabled SERVICE_AGENT user",
                 "Grant the existing workload role and attach the verified policies",
-                "Create an individual credential and verify its vault item",
+                cred,
                 "Consolidate profiles in connections.toml and add the new connection",
-                "Enable the new user; require runtime verification",
+                "Confirm the operator saved the credential, then enable the user",
+                "Require runtime verification with operator-supplied credential files",
             ]
         if action == "rotate":
+            cred = (
+                "Create a replacement credential and verify its vault item"
+                if vault_mode
+                else "Create a replacement credential and relay it to the operator once"
+            )
             return [
-                "Create a replacement credential and verify its vault item",
+                cred,
                 "Keep the active credential until runtime verification",
                 "Retain the previous credential until explicit retirement",
             ]
@@ -421,6 +461,11 @@ class Provisioner:
                 )
 
             journal("running")
+            credential_relay = None
+            vault_keys = ("provider", "vault", "vault_account", "vault_server", "vault_user")
+            use_vault = vault_integration_enabled(self.fleet.config.read()) and any(
+                spec.get(k) for k in vault_keys
+            )
             if not state:
                 state = {"target": target, "status": "provisioning", "operation_id": operation_id}
                 self.fleet.save_state(identity, state)
@@ -449,8 +494,9 @@ class Provisioner:
                         )
 
                     if action in {"provision", "rotate"} and spec["auth"] != "WIF":
-                        vault = Vault(spec)
-                        vault.ready()  # Unlock/account checks precede any Snowflake writes.
+                        if use_vault:
+                            vault = Vault(spec)
+                            vault.ready()
                         if spec["auth"] == "KEYPAIR" and not shutil.which("openssl"):
                             raise ValueError("Install OpenSSL before generating a key pair.")
                     if action == "provision":
@@ -532,15 +578,26 @@ class Provisioner:
                                 state.update(
                                     pending_slot=plan["key_slot"], pending_fingerprint=fingerprint
                                 )
-                            reference = vault.create(
-                                f"Snowbeam · {spec['organization']}-{spec['account']} · "
-                                f"{spec['user']} · {operation_id}",
-                                secret,
-                            )
+                            if use_vault:
+                                reference = vault.create(
+                                    f"Snowbeam · {spec['organization']}-{spec['account']} · "
+                                    f"{spec['user']} · {operation_id}",
+                                    secret,
+                                )
+                                credential_relay = None
+                                state["pending_ref"] = reference
+                                steps.append("vault_write_verified")
+                            else:
+                                credential_relay = build_relay(
+                                    spec,
+                                    secret,
+                                    operation_id=operation_id,
+                                    token_name=plan.get("token_name"),
+                                )
+                                steps.append("credential_awaiting_human_save")
+                                state["status"] = "awaiting_relay_confirmation"
                             del secret
-                            state["pending_ref"] = reference
                             self.fleet.save_state(identity, state)
-                            steps.append("vault_write_verified")
                             journal("running")
                             if public:
                                 execute(
@@ -552,22 +609,29 @@ class Provisioner:
                             state["approved_policy_digest"] = approved_policy
                             state["approved_role_digest"] = digest(plan["role_grants"])
                             state["credential_kind"] = spec["auth"]
-                            state["status"] = "awaiting_verification"
+                            if use_vault:
+                                state["status"] = "awaiting_verification"
                             if action == "provision":
                                 profile = self._profile(spec)
                                 self.service.config.ensure_shared()
                                 self.service.config.save(
                                     profile.name, profile.settings, create=True
                                 )
-                                self.fleet.config.save("credentials", identity, reference)
-                                state["credential_ref"] = reference
+                                if use_vault:
+                                    self.fleet.config.save("credentials", identity, reference)
+                                    state["credential_ref"] = reference
                                 state["credential_name"] = state.get("pending_name")
                                 state["public_key_fp"] = fingerprint
                                 state["key_slot"] = plan["key_slot"]
                                 steps.append("connection_profile_created")
                                 self._assert_assignment(inspector, spec, approved_policy)
-                                execute(f"ALTER USER {quote(spec['user'])} SET DISABLED = FALSE")
-                                steps.append("user_enabled")
+                                if use_vault:
+                                    execute(
+                                        f"ALTER USER {quote(spec['user'])} SET DISABLED = FALSE"
+                                    )
+                                    steps.append("user_enabled")
+                            elif use_vault:
+                                state["status"] = "awaiting_verification"
                             self.fleet.save_state(identity, state)
                     elif action == "retire-old":
                         if state.get("previous_name"):
@@ -664,18 +728,61 @@ class Provisioner:
                     f"operations; completed steps are recorded."
                 ) from None
             self.service.import_profiles()
-            return {
+            result = {
                 "operation": operation_id,
                 "identity": identity,
                 "action": action,
                 "status": state["status"],
                 "steps": steps,
                 "next": "Run identities verify from the declared runtime."
-                if action in {"provision", "rotate"}
+                if state["status"] == "awaiting_verification"
+                else "Save the credential, then run identities confirm-relay."
+                if state["status"] == "awaiting_relay_confirmation"
                 else "Refresh the identity to inspect current Snowflake state.",
             }
+            if credential_relay:
+                result["credential_relay"] = credential_relay
+            return result
 
-    def verify(self, identity: str, runtime: str) -> dict:
+    def confirm_relay(self, identity: str) -> dict:
+        with operation_lock(self.service.store.directory):
+            spec = self.managed_spec(identity)
+            state = self.fleet.state(identity)
+            if state.get("status") != "awaiting_relay_confirmation":
+                raise ValueError("This identity is not waiting for credential relay confirmation.")
+            admin = self.service.config.profile(spec["admin_connection"])
+            with self.fleet.session_for(admin) as actual:
+                observed = self.service.client.identity(actual)
+                guarded_query(
+                    self.service.client,
+                    actual,
+                    spec["organization"],
+                    spec["account"],
+                    f"ALTER USER {quote(spec['user'])} SET DISABLED = FALSE",
+                    user=observed["user_name"],
+                    role=observed.get("role_name"),
+                )
+            state["status"] = "awaiting_verification"
+            state["relay_confirmed_at"] = iso()
+            self.fleet.save_state(identity, state)
+            return {
+                "identity": identity,
+                "status": state["status"],
+                "next": (
+                    "Verify with snowbeam identities verify --runtime RUNTIME and "
+                    "--token-file or --private-key-file paths you control."
+                ),
+            }
+
+    def verify(
+        self,
+        identity: str,
+        runtime: str,
+        *,
+        token_file=None,
+        private_key_file=None,
+        passphrase: str | None = None,
+    ) -> dict:
         with operation_lock(self.service.store.directory):
             spec = self.managed_spec(identity)
             if not runtime or runtime != spec.get("runtime"):
@@ -685,21 +792,36 @@ class Provisioner:
             state = self.fleet.state(identity)
             if state.get("status") == "revoked":
                 raise ValueError("This managed identity was revoked.")
+            if state.get("status") == "awaiting_relay_confirmation":
+                raise ValueError(
+                    "Confirm you saved the credential with identities confirm-relay first."
+                )
             reference = state.get("pending_ref") or state.get("credential_ref")
-            if not reference and spec["auth"] != "WIF":
-                raise ValueError("No saved credential is available for verification.")
+            use_vault = (
+                vault_integration_enabled(self.fleet.config.read())
+                and reference
+                and not (token_file or private_key_file)
+            )
+            if spec["auth"] != "WIF" and not use_vault and not (token_file or private_key_file):
+                raise ValueError(
+                    "Supply --token-file or --private-key-file for verification. Snowbeam does "
+                    "not read password managers in the default configuration."
+                )
             profile = self._profile(spec)
             sql = (
                 IDENTITY_SQL
                 + ", CURRENT_IP_ADDRESS() AS CLIENT_IP, SYS_CONTEXT('SNOWFLAKE$SESSION', "
                 "'IP_ADDRESS_V6') AS CLIENT_IPV6"
             )
-            session = (
-                workload_session(profile)
-                if spec["auth"] == "WIF"
-                else credential_session(profile, Vault(reference).read())
-            )
-            with session as actual:
+            with verification_session(
+                profile,
+                spec,
+                token_file=token_file,
+                private_key_file=private_key_file,
+                passphrase=passphrase,
+                reference=reference,
+                vault_integration=bool(use_vault),
+            ) as actual:
                 rows = guarded_query(
                     self.service.client,
                     actual,
@@ -726,21 +848,40 @@ class Provisioner:
         state = self.fleet.state(identity)
         profile = self._profile(spec)
         reference = state.get("pending_ref") or state.get("credential_ref")
-        if state.get("pending_ref"):
-            if state.get("credential_ref") and state["credential_ref"] != reference:
-                state.update(
-                    previous_ref=state["credential_ref"],
-                    previous_name=state.get("credential_name"),
-                    previous_slot=state.get("key_slot"),
-                    previous_fingerprint=state.get("public_key_fp"),
-                )
+        if state.get("pending_ref") or state.get("pending_name") or state.get("pending_slot"):
+            rotating = False
+            if state.get("pending_name") and state.get("credential_name"):
+                rotating = state["credential_name"] != state["pending_name"]
+            elif state.get("pending_fingerprint") and state.get("public_key_fp"):
+                rotating = state["public_key_fp"] != state["pending_fingerprint"]
+            elif state.get("pending_ref") and state.get("credential_ref"):
+                rotating = state["credential_ref"] != state["pending_ref"]
+            if rotating:
+                if (
+                    state.get("credential_ref")
+                    and reference
+                    and state["credential_ref"] != reference
+                ):
+                    state.update(
+                        previous_ref=state["credential_ref"],
+                        previous_name=state.get("credential_name"),
+                        previous_slot=state.get("key_slot"),
+                        previous_fingerprint=state.get("public_key_fp"),
+                    )
+                elif state.get("credential_name") or state.get("public_key_fp"):
+                    state.update(
+                        previous_name=state.get("credential_name"),
+                        previous_slot=state.get("key_slot"),
+                        previous_fingerprint=state.get("public_key_fp"),
+                    )
             state.update(
-                credential_ref=reference,
-                credential_name=state.get("pending_name"),
+                credential_ref=reference if reference else state.get("credential_ref"),
+                credential_name=state.get("pending_name") or state.get("credential_name"),
                 key_slot=state.get("pending_slot") or state.get("key_slot"),
                 public_key_fp=state.get("pending_fingerprint") or state.get("public_key_fp"),
             )
-            self.fleet.config.save("credentials", identity, reference)
+            if reference and vault_integration_enabled(self.fleet.config.read()):
+                self.fleet.config.save("credentials", identity, reference)
             for key in ("pending_name", "pending_ref", "pending_slot", "pending_fingerprint"):
                 state.pop(key, None)
         state.update(

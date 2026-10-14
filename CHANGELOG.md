@@ -3,6 +3,36 @@
 Versions follow Python package versioning. Pre-release tags match package versions
 with a `v` prefix. This file records user-visible changes and known limitations.
 
+## 0.2.0a6 — Unreleased
+
+- Add read-only `snowbeam local scan` for Snowflake CLI credential hygiene on
+  this machine (configs, keys, permissions, shell exports, environment).
+- Add `snowbeam snow` to run the Snowflake CLI with `PRIVATE_KEY_PASSPHRASE`
+  only in the child process when a passphrase is stored in macOS Keychain (or
+  Linux `secret-tool` when available).
+- Add `snowbeam secrets set-passphrase`, `status`, and `remove` for OS-backed
+  connection passphrases; optional `snowbeam local keychain-wrapper` shell snippet.
+- Document MacBook setup in [docs/macbook-snow-credentials.md](docs/macbook-snow-credentials.md).
+
+## 0.2.0a5 — Unreleased
+
+- Default managed-agent credential handoff is **human relay**: after an approved
+  apply, Snowbeam prints suggested password-manager fields once, requires
+  `identities confirm-relay`, and verifies with `--token-file` or
+  `--private-key-file` (secrets are not persisted in SQLite or logs).
+- Password-manager CLI integration is **opt-in** via
+  `preferences.vault_integration` (off by default). Templates omit vault fields
+  unless enabled.
+- Document the implemented managed-agent lifecycle: reviewed plan/apply, runtime
+  export and verification, rotation, retirement, and revocation; optional vault
+  writes when integration is enabled.
+- Add v1 access-request YAML import, capability checks, role starters, account
+  admin mapping, lifetime tracking, and connection hygiene helpers.
+- Add an inspect-only agent SQL example (for example read-only `SHOW` metadata)
+  to the identity and security guide.
+- Block lifecycle actions in demo mode with an explicit message.
+- Add CLI lifecycle tests and a validation note for mocked Snowflake/vault flows.
+
 ## 0.2.0a4 — Unreleased
 
 - Offer **Clone from** at the top of the blank Add connection form. Selecting a
@@ -60,6 +90,7 @@ First alpha release of Snowbeam.
 The earlier `0.2.0` value was used in private development builds; it was not a
 public release. That development build is not a newer stable release of this alpha.
 
-Live Snowflake provisioning, real 1Password/Bitwarden writes, cloud workload
-identity authentication, and actual Omarchy desktop behavior remain unvalidated.
-See the [alpha release notes](docs/releases/0.2.0a1.md).
+Managed agent lifecycle is implemented and covered by isolated automated tests.
+Live Snowflake and vault trials on each supported platform, cloud workload
+authentication on real cloud runtimes, and Omarchy desktop behavior still need
+broader validation. See [0.2.0a5 validation](docs/releases/0.2.0a5-validation.md).

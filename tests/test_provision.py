@@ -4,7 +4,7 @@ import hashlib
 import re
 
 import pytest
-from test_fleet import AUTH, NETWORK, agent
+from test_fleet import AUTH, NETWORK, TEMPLATE, agent
 
 from snowbeam.provision import Provisioner
 from snowbeam.snowflake import SnowClient, SnowError
@@ -49,6 +49,16 @@ class Cloud:
         words = sql.split()
         if sql.startswith("SHOW USERS"):
             return [{"name": key} for key in self.users]
+        if sql.startswith("SHOW ROLES"):
+            role = words[-1].strip('"')
+            return [{"name": role}] if role in {"ANALYST_AGENT", "DEVO_INSPECT"} else []
+        if sql.startswith("SHOW GRANTS TO ROLE"):
+            return [{"privilege": "SELECT", "granted_on": "TABLE", "name": "DB.PUBLIC.ORDERS"}]
+        if sql.startswith("SHOW GRANTS TO USER"):
+            user = words[-1].strip('"')
+            if user in self.users and self.users[user].get("role"):
+                return [{"role": self.users[user]["role"], "grantee_name": user}]
+            return [{"privilege": "USAGE", "granted_on": "ROLE", "name": "ANALYST_AGENT"}]
         if sql.startswith("DESCRIBE AUTHENTICATION POLICY"):
             return [
                 {"property": key, "value": value}
@@ -56,8 +66,6 @@ class Cloud:
             ]
         if sql.startswith("DESCRIBE NETWORK POLICY"):
             return [{"name": key, "value": value} for key, value in NETWORK["properties"].items()]
-        if sql.startswith("SHOW GRANTS TO ROLE"):
-            return [{"privilege": "SELECT", "granted_on": "TABLE", "name": "DB.PUBLIC.ORDERS"}]
         if sql.startswith("CREATE USER"):
             user = words[2].strip('"')
             if user in self.users:
@@ -143,9 +151,6 @@ class Cloud:
             return [{"database_name": "SECURITY", "schema_name": "POLICIES", "name": "PAT_ONLY"}]
         if sql.startswith("SHOW PARAMETERS"):
             return [{"key": "NETWORK_POLICY", "value": "RUNNER_NETWORK", "level": "USER"}]
-        if sql.startswith("SHOW GRANTS TO USER"):
-            user = words[-1].strip('"')
-            return [{"role": self.users[user]["role"], "grantee_name": user}]
         if sql.startswith("SHOW USER PROGRAMMATIC ACCESS TOKENS"):
             user = words[-1].strip('"')
             return [
@@ -180,7 +185,7 @@ def setup(service, monkeypatch):
                 raise VaultError("Vault is locked.")
 
         def create(self, title, secret):
-            if cloud.vault_fails:
+            if getattr(cloud, "vault_fails", False):
                 raise VaultError("Vault write failed.")
             cloud.counter += 1
             key = f"00000000-0000-0000-0000-{cloud.counter:012}"
@@ -199,9 +204,68 @@ def setup(service, monkeypatch):
     return fleet, cloud, Provisioner(fleet)
 
 
-def apply(provisioner, action="provision"):
-    plan = provisioner.plan("sam", action)
-    return provisioner.apply("sam", action, plan["approval"])
+def apply(provisioner, action="provision", identity="sam"):
+    plan = provisioner.plan(identity, action)
+    return provisioner.apply(identity, action, plan["approval"])
+
+
+def verify_relay(provisioner, result, runtime="runner-east", identity="sam"):
+    import tempfile
+    from pathlib import Path
+
+    if result.get("status") == "awaiting_relay_confirmation":
+        relay = result["credential_relay"]
+        provisioner.confirm_relay(identity)
+        fields = relay["fields"]
+        if fields.get("token"):
+            path = Path(tempfile.mkstemp(suffix=".token")[1])
+            path.write_text(fields["token"])
+            return provisioner.verify(identity, runtime, token_file=path)
+        path = Path(tempfile.mkstemp(suffix=".p8")[1])
+        path.write_text(fields["private_key"])
+        return provisioner.verify(
+            identity, runtime, private_key_file=path, passphrase=fields.get("passphrase")
+        )
+    state = provisioner.fleet.state(identity)
+    reference = state.get("pending_ref") or state.get("credential_ref")
+    if reference:
+        cloud = provisioner.fleet.service.client
+        item = reference.get("item")
+        if getattr(cloud, "secrets", None) and item in cloud.secrets:
+            secret = cloud.secrets[item]
+            if secret.get("token"):
+                path = Path(tempfile.mkstemp(suffix=".token")[1])
+                path.write_text(secret["token"])
+                return provisioner.verify(identity, runtime, token_file=path)
+            path = Path(tempfile.mkstemp(suffix=".p8")[1])
+            path.write_text(secret["private_key"])
+            return provisioner.verify(
+                identity,
+                runtime,
+                private_key_file=path,
+                passphrase=secret.get("passphrase"),
+            )
+        return provisioner.verify(identity, runtime)
+    return provisioner.verify(identity, runtime, token_file=_token_path(provisioner, identity))
+
+
+def _token_path(provisioner, identity):
+    import tempfile
+    from pathlib import Path
+
+    user = provisioner.managed_spec(identity)["user"]
+    for call in reversed(provisioner.fleet.service.client.calls):
+        if "ADD PROGRAMMATIC ACCESS TOKEN" in call:
+            token = call.split()[7].strip('"')
+            break
+    else:
+        token = "SECRET"
+    path = Path(tempfile.mkstemp(suffix=".token")[1])
+    for row in provisioner.fleet.service.client.users.get(user, {}).get("tokens", {}).values():
+        path.write_text(row)
+        return path
+    path.write_text(f"SECRET_FOR_{token}")
+    return path
 
 
 def test_complete_pat_lifecycle_keeps_old_credential_until_verified(setup):
@@ -210,16 +274,16 @@ def test_complete_pat_lifecycle_keeps_old_credential_until_verified(setup):
     assert not cloud.users
     assert all(not c.startswith(("CREATE", "ALTER", "GRANT")) for c in cloud.calls)
     result = p.apply("sam", "provision", plan["approval"])
-    assert result["status"] == "awaiting_verification"
-    assert cloud.users["AGENT_SAM"]["disabled"] is False
+    assert result["status"] == "awaiting_relay_confirmation"
+    assert cloud.users["AGENT_SAM"]["disabled"] is True
     first = fleet.state("sam")["credential_name"]
     assert "SECRET_FOR" not in fleet.config.path.read_text()
     assert "SECRET_FOR" not in fleet.service.config.source.read_text()
     assert b"SECRET_FOR" not in fleet.service.store.path.read_bytes()
-    verified = p.verify("sam", "runner-east")
+    verified = verify_relay(p, result)
     assert verified["role"] == "ANALYST_AGENT"
     assert fleet.state("sam")["status"] == "active"
-    apply(p, "rotate")
+    rotate_result = apply(p, "rotate")
     state = fleet.state("sam")
     second = state["pending_name"]
     assert second != first
@@ -227,7 +291,7 @@ def test_complete_pat_lifecycle_keeps_old_credential_until_verified(setup):
     assert set(cloud.users["AGENT_SAM"]["tokens"]) == {first, second}
     with pytest.raises(ValueError, match="Verify"):
         p.plan("sam", "retire-old")
-    p.verify("sam", "runner-east")
+    verify_relay(p, rotate_result)
     assert fleet.state("sam")["previous_name"] == first
     apply(p, "retire-old")
     assert set(cloud.users["AGENT_SAM"]["tokens"]) == {second}
@@ -262,9 +326,12 @@ def test_policy_relaxation_and_existing_user_block_provisioning(setup):
         p.plan("sam")
 
 
-def test_vault_failure_revokes_new_pat_and_leaves_user_disabled(setup):
+def test_vault_failure_revokes_new_pat_and_leaves_user_disabled(setup, monkeypatch):
     fleet, cloud, p = setup
+    fleet.config.set_preference("vault_integration", True)
+    fleet.config.save("templates", "reporting", TEMPLATE, create=False)
     cloud.vault_fails = True
+    monkeypatch.setattr("snowbeam.provision.vault_integration_enabled", lambda doc: True)
     with pytest.raises(ValueError, match="Vault write failed"):
         apply(p)
     assert not cloud.users["AGENT_SAM"]["tokens"]
@@ -286,31 +353,37 @@ def test_uncertain_mint_and_failed_cleanup_are_visible(setup):
     assert fleet.service.store.operations()[0]["status"] == "recovery_required"
 
 
-def test_locked_vault_never_creates_user_and_can_retry(setup):
+def test_locked_vault_never_creates_user_and_can_retry(setup, monkeypatch):
     fleet, cloud, p = setup
+    fleet.config.set_preference("vault_integration", True)
+    fleet.config.save("templates", "reporting", TEMPLATE, create=False)
+    monkeypatch.setattr("snowbeam.provision.vault_integration_enabled", lambda doc: True)
     cloud.vault_ready = False
     with pytest.raises(ValueError, match="locked"):
         apply(p)
     assert not cloud.users
     assert not fleet.state("sam")
     cloud.vault_ready = True
-    assert apply(p)["status"] == "awaiting_verification"
+    result = apply(p)
+    assert result["status"] in {"awaiting_relay_confirmation", "awaiting_verification"}
 
 
 def test_runtime_verification_cannot_claim_wrong_role_or_runtime(setup):
     fleet, cloud, p = setup
     apply(p)
+    p.confirm_relay("sam")
+    token = _token_path(p, "sam")
     with pytest.raises(ValueError, match="declared runtime"):
-        p.verify("sam", "my-laptop")
+        p.verify("sam", "my-laptop", token_file=token)
     cloud.role = "SOME_OTHER_ROLE"
     with pytest.raises(ValueError, match="unexpected role"):
-        p.verify("sam", "runner-east")
+        p.verify("sam", "runner-east", token_file=token)
     assert fleet.state("sam")["status"] == "awaiting_verification"
 
 
 def test_target_cannot_be_repointed_after_provisioning(setup):
     fleet, _, p = setup
-    apply(p)
+    verify_relay(p, apply(p))
     fleet.config.save("templates", "reporting", {"account": "OTHER"})
     with pytest.raises(ValueError, match="different identity or account"):
         p.plan("sam", "revoke")
@@ -333,14 +406,12 @@ def test_key_pair_rotation_preserves_owned_slots_until_verified(setup, monkeypat
         )
 
     monkeypatch.setattr("snowbeam.provision.generate_key", key)
-    apply(p)
-    p.verify("sam", "runner-east")
+    verify_relay(p, apply(p))
     first = fleet.state("sam")["public_key_fp"]
     assert fleet.state("sam")["key_slot"] == "RSA_PUBLIC_KEY"
-    apply(p, "rotate")
+    verify_relay(p, apply(p, "rotate"))
     assert cloud.users["AGENT_SAM"]["RSA_PUBLIC_KEY_FP"] == first
     assert "RSA_PUBLIC_KEY_2_FP" in cloud.users["AGENT_SAM"]
-    p.verify("sam", "runner-east")
     apply(p, "retire-old")
     assert "RSA_PUBLIC_KEY_FP" not in cloud.users["AGENT_SAM"]
     assert "RSA_PUBLIC_KEY_2_FP" in cloud.users["AGENT_SAM"]
@@ -362,8 +433,7 @@ def test_existing_unmanaged_public_key_is_not_overwritten_or_removed(setup, monk
             fp,
         ),
     )
-    apply(p)
-    p.verify("sam", "runner-east")
+    verify_relay(p, apply(p))
     cloud.users["AGENT_SAM"]["RSA_PUBLIC_KEY_2_FP"] = "UNMANAGED_KEY"
     with pytest.raises(ValueError, match="Both"):
         p.plan("sam", "rotate")
@@ -421,6 +491,9 @@ def test_workload_provisioning_uses_unique_cloud_identity_and_no_vault(setup):
 def test_runtime_handoff_excludes_manager_access_and_accepts_only_reviewed_report(
     setup, monkeypatch, tmp_path
 ):
+    fleet, cloud, p = setup
+    fleet.config.set_preference("vault_integration", True)
+    fleet.config.save("templates", "reporting", TEMPLATE, create=False)
     import json
 
     from snowbeam.runtime import (
@@ -434,9 +507,7 @@ def test_runtime_handoff_excludes_manager_access_and_accepts_only_reviewed_repor
         test_bundle as run_test,
     )
 
-    fleet, cloud, p = setup
-    apply(p)
-    p.verify("sam", "runner-east")
+    verify_relay(p, apply(p))
     old = fleet.state("sam")["credential_name"]
     apply(p, "rotate")
     monkeypatch.setattr("snowbeam.runtime.guarded_query", cloud.execute)
@@ -444,6 +515,7 @@ def test_runtime_handoff_excludes_manager_access_and_accepts_only_reviewed_repor
         "snowbeam.runtime.Vault", __import__("snowbeam.provision", fromlist=["Vault"]).Vault
     )
     bundle = export_bundle(fleet, "sam")
+    assert bundle["credential_handoff"] == "vault"
     payload = json.dumps(bundle)
     assert "SECRET_FOR" not in payload
     assert "admin_connection" not in payload
@@ -483,7 +555,9 @@ def test_runtime_receipt_rejects_wrong_or_stale_evidence(setup, tmp_path, change
     from snowbeam.store import iso, utcnow
 
     fleet, cloud, p = setup
-    apply(p)
+    fleet.config.set_preference("vault_integration", True)
+    fleet.config.save("templates", "reporting", TEMPLATE, create=False)
+    assert apply(p)["status"] == "awaiting_verification"
     bundle = export_bundle(fleet, "sam")
     receipt = {
         "version": 1,
@@ -517,7 +591,9 @@ def test_runtime_bundle_rejects_arbitrary_host_and_secret_fields(setup, tmp_path
     from snowbeam.runtime import export_bundle, load_bundle
 
     fleet, _, p = setup
-    apply(p)
+    fleet.config.set_preference("vault_integration", True)
+    fleet.config.save("templates", "reporting", TEMPLATE, create=False)
+    verify_relay(p, apply(p))
     bundle = export_bundle(fleet, "sam")
     path = tmp_path / "bundle.json"
     for key, value in (("host", "collector.example.com"), ("password", "DO_NOT_RESOLVE")):
@@ -536,8 +612,7 @@ def test_runtime_bundle_rejects_arbitrary_host_and_secret_fields(setup, tmp_path
 
 def test_policy_contents_drift_under_same_name_is_visible(setup):
     fleet, cloud, p = setup
-    apply(p)
-    p.verify("sam", "runner-east")
+    verify_relay(p, apply(p))
     fleet.refresh("sam")
     row = next(row for row in fleet.identities() if row["id"] == "sam")
     assert row["status"] == "Matches template", row["issues"]
@@ -573,8 +648,7 @@ def test_timed_out_user_creation_retains_recovery_record_without_adopting_user(s
 
 def test_colliding_pat_name_is_never_removed_as_failed_mint_cleanup(setup, monkeypatch):
     fleet, cloud, p = setup
-    apply(p)
-    p.verify("sam", "runner-east")
+    verify_relay(p, apply(p))
     original = cloud.execute
 
     def collision(client, profile, org, account, sql, **kwargs):
@@ -597,7 +671,9 @@ def test_runtime_cli_does_not_read_manager_configuration(setup, monkeypatch, tmp
     from snowbeam.runtime import export_bundle, write_json
 
     fleet, cloud, p = setup
-    apply(p)
+    fleet.config.set_preference("vault_integration", True)
+    fleet.config.save("templates", "reporting", TEMPLATE, create=False)
+    verify_relay(p, apply(p))
     bundle = tmp_path / "sam.json"
     write_json(bundle, export_bundle(fleet, "sam"))
     forbidden = tmp_path / "manager-config.toml"

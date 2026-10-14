@@ -10,18 +10,32 @@ accounts. Snowbeam is a local terminal app built first for
 
 Give each autonomous agent its own identity and only the access its job needs.
 Keep client accounts separate, inspect policy evidence, and manage individual
-credentials through reviewed plans. Snowflake enforces access; 1Password or
-Bitwarden holds managed tokens and private keys; your chosen runtime runs the
-agent. Snowbeam works independently of Airlock.
+credentials through reviewed plans. Snowflake enforces access; you save managed
+tokens and private keys in your own password manager; your chosen runtime runs
+the agent. Snowbeam works independently of Airlock.
 
 **Published alpha: `0.2.0a3`.** Source and versioned downloads are available through
-[GitHub releases](https://github.com/reunionstudio/snowbeam/releases). Live Snowflake provisioning, vault writes, cloud
-workload authentication, and Omarchy desktop validation remain pending. See the
-[alpha release notes](https://github.com/reunionstudio/snowbeam/blob/main/docs/releases/0.2.0a3.md).
+[GitHub releases](https://github.com/reunionstudio/snowbeam/releases).
 
-The working source includes changes for the next release. Use the
-[local demo loop](CONTRIBUTING.md#fast-local-iteration) to try them without
-replacing your installed app.
+The working source (`0.2.0a6`) implements reviewed **plan → apply → human relay**
+for managed agents: Snowbeam shows exactly what to save after apply, waits for
+explicit confirmation, then verifies sign-in with operator-supplied token or key
+files (no password-manager CLI in the default path). Optional **vault
+integration** (`snowbeam preferences vault-integration on`) restores automated
+1Password/Bitwarden writes for teams that opt in. Create, rotate, and revoke
+individual PATs or key pairs (plus workload-identity binding), with runtime
+export and verification. Use the [identity and security guide](docs/security.md)
+with Snowflake CLI. On a shared MacBook, use [local credential
+hygiene](docs/macbook-snow-credentials.md) (`local scan`, `secrets
+set-passphrase`, `snowbeam snow`). Automated tests mock Snowflake and vault
+adapters; your
+accounts still need a deliberate trial. Cloud workload authentication on a real
+cloud runtime and Omarchy desktop validation remain pending. See
+[0.2.0a5 release notes](docs/releases/0.2.0a5.md).
+
+Use the [local demo loop](CONTRIBUTING.md#fast-local-iteration) for UI work
+without replacing your installed app. Demo mode does not run live lifecycle
+operations.
 
 ![Snowbeam identity inventory with synthetic data](https://reunionstudio.io/assets/snowbeam/identities.png)
 
@@ -149,7 +163,8 @@ describes configuration, storage paths, launchers, and reminders.
 - [Changelog](https://github.com/reunionstudio/snowbeam/blob/main/CHANGELOG.md) and [release process](https://github.com/reunionstudio/snowbeam/blob/main/docs/releasing.md).
 - [Contributing](https://github.com/reunionstudio/snowbeam/blob/main/CONTRIBUTING.md) and [reporting a security issue](https://github.com/reunionstudio/snowbeam/blob/main/SECURITY.md).
 
-The alpha has local tests and package-installation checks. GitHub Actions are
+The alpha has local tests (including mocked provisioning and vault flows) and
+package-installation checks. GitHub Actions are
 [setup templates](docs/github-actions/README.md) until workflow authorization is
 available; hosted Linux CI and live Omarchy testing remain pending.
 
