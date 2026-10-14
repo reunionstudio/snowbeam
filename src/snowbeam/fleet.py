@@ -11,7 +11,7 @@ import tomlkit
 
 from .config import Config, ConfigError, read_document
 
-LABEL_FIELDS = {"client", "owner", "purpose", "runtime"}
+LABEL_FIELDS = {"client", "owner", "purpose", "runtime", "lifetime_end", "requester"}
 TEMPLATE_FIELDS = {
     "host",
     "organization",
@@ -114,7 +114,7 @@ def validate_fields(data: dict, allowed: set[str]) -> dict:
     return dict(data)
 
 
-def template_values(data: dict) -> dict:
+def template_values(data: dict, *, vault_integration: bool = False) -> dict:
     result = validate_fields(data, TEMPLATE_FIELDS)
     required = {
         "organization",
@@ -127,7 +127,7 @@ def template_values(data: dict) -> dict:
     if not all(result.get(key) for key in required):
         raise ValueError(
             "A template needs organization, account, admin connection, role, "
-            "authentication policy, network policy, and vault provider."
+            "authentication policy, and network policy."
         )
     for field in ("organization", "account", "role", "network_policy"):
         result[field] = identifier(result[field])
@@ -145,7 +145,12 @@ def template_values(data: dict) -> dict:
     if not isinstance(result["days_to_expiry"], int) or not 1 <= result["days_to_expiry"] <= 365:
         raise ValueError("PAT lifetime must be between 1 and 365 days.")
     if result["auth"] != "WIF":
-        vault_values(result)
+        vault_fields = ("provider", "vault", "vault_account", "vault_server", "vault_user")
+        if vault_integration and any(result.get(k) for k in vault_fields):
+            vault_values(result)
+        else:
+            for key in vault_fields:
+                result.pop(key, None)
     elif any(
         result.get(k) for k in ("provider", "vault", "vault_account", "vault_server", "vault_user")
     ):
@@ -200,12 +205,26 @@ class FleetConfig:
 
     @staticmethod
     def validate(doc) -> dict:
-        if (
-            set(doc) - {"version", "templates", "identities", "credentials"}
-            or doc.get("version", 1) != 1
-        ):
+        allowed_top = {
+            "version",
+            "templates",
+            "identities",
+            "credentials",
+            "account_admins",
+            "starters",
+            "preferences",
+        }
+        if set(doc) - allowed_top or doc.get("version", 1) != 1:
             raise ConfigError("Unsupported Snowbeam fleet configuration.")
-        result = {"version": 1, "templates": {}, "identities": {}, "credentials": {}}
+        result = {
+            "version": 1,
+            "templates": {},
+            "identities": {},
+            "credentials": {},
+            "account_admins": {},
+            "starters": {},
+            "preferences": {},
+        }
         for section in ("templates", "identities", "credentials"):
             entries = doc.get(section, {})
             if not isinstance(entries, dict):
@@ -220,8 +239,13 @@ class FleetConfig:
                     else REFERENCE_FIELDS
                 )
                 result[section][key] = validate_fields(value, allowed)
+        prefs = doc.get("preferences", {})
+        if prefs and not isinstance(prefs, dict):
+            raise ConfigError("preferences must be a table.")
+        result["preferences"] = {k: v for k, v in prefs.items() if isinstance(v, (bool, str, int))}
+        vault_on = bool(result["preferences"].get("vault_integration"))
         for key, value in result["templates"].items():
-            result["templates"][key] = template_values(value)
+            result["templates"][key] = template_values(value, vault_integration=vault_on)
         seen = set()
         for value in result["identities"].values():
             if not value.get("connection") or value.get("kind") not in {"person", "agent"}:
@@ -276,13 +300,65 @@ class FleetConfig:
             vault_values(value)
             if not re.fullmatch(r"[A-Za-z0-9-]{20,64}", value.get("item", "")):
                 raise ValueError("Credential references must use an immutable vault item ID.")
+        admins = doc.get("account_admins", {})
+        if not isinstance(admins, dict):
+            raise ConfigError("account_admins must be a table of organization-account keys.")
+        for key, connection in admins.items():
+            if not isinstance(connection, str) or not connection:
+                raise ValueError("Each account admin entry needs a connection name.")
+            parts = str(key).split("-", 1)
+            if len(parts) != 2:
+                raise ValueError("Account admin keys use ORGANIZATION-ACCOUNT format.")
+            identifier(parts[0])
+            identifier(parts[1])
+            result["account_admins"][f"{identifier(parts[0])}-{identifier(parts[1])}"] = connection
+        from .starters import validate_user_starter
+
+        starters = doc.get("starters", {})
+        if not isinstance(starters, dict):
+            raise ConfigError("starters must be a table.")
+        for key, value in starters.items():
+            name(key)
+            result["starters"][key] = validate_user_starter(key, value)
         return result
+
+    def intent_spec(
+        self, key: str, template_name: str, user: str, labels: dict, document: dict | None = None
+    ) -> dict:
+        doc = self.read() if document is None else document
+        template = doc["templates"][template_name]
+        return {
+            **template,
+            **labels,
+            "id": key,
+            "kind": "agent",
+            "connection": key,
+            "template": template_name,
+            "user": identifier(user),
+        }
+
+    def set_account_admin(self, organization: str, account: str, connection: str) -> None:
+        from .starters import account_key
+
+        key = account_key(organization, account)
+        with Config(self.path)._edit(self.path) as doc:
+            if "account_admins" not in doc:
+                doc["account_admins"] = tomlkit.table()
+            doc["account_admins"][key] = connection
+            self.validate(doc)
 
     def save(self, section: str, key: str, values: dict, *, create: bool = False) -> None:
         name(key)
         # Validate the entire future document before touching the file.
         with Config(self.path)._edit(self.path) as doc:
-            if section not in {"templates", "identities", "credentials"}:
+            if section not in {
+                "templates",
+                "identities",
+                "credentials",
+                "account_admins",
+                "starters",
+                "preferences",
+            }:
                 raise ValueError("Unknown Snowbeam section.")
             if section not in doc:
                 doc[section] = tomlkit.table()
@@ -299,10 +375,25 @@ class FleetConfig:
             )
             validate_fields(current, allowed)
             if section == "templates":
-                current = template_values(current)
+                prefs = self.read().get("preferences", {})
+                current = template_values(
+                    current,
+                    vault_integration=bool(prefs.get("vault_integration")),
+                )
             if section == "credentials":
                 vault_values(current)
+            if section == "starters":
+                from .starters import validate_user_starter
+
+                current = validate_user_starter(key, current)
             doc[section][key] = current
+            self.validate(doc)
+
+    def set_preference(self, key: str, value: bool | str | int) -> None:
+        with Config(self.path)._edit(self.path) as doc:
+            if "preferences" not in doc:
+                doc["preferences"] = tomlkit.table()
+            doc["preferences"][key] = value
             self.validate(doc)
 
     def spec(self, key: str, document: dict | None = None) -> dict:

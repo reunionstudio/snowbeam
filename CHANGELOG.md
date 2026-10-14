@@ -5,9 +5,18 @@ with a `v` prefix. This file records user-visible changes and known limitations.
 
 ## 0.2.0a5 — Unreleased
 
-- Document the implemented managed-agent lifecycle: reviewed plan/apply, 1Password
-  and Bitwarden writes with read-back verification, runtime export and
-  verification, rotation, retirement, and revocation.
+- Default managed-agent credential handoff is **human relay**: after an approved
+  apply, Snowbeam prints suggested password-manager fields once, requires
+  `identities confirm-relay`, and verifies with `--token-file` or
+  `--private-key-file` (secrets are not persisted in SQLite or logs).
+- Password-manager CLI integration is **opt-in** via
+  `preferences.vault_integration` (off by default). Templates omit vault fields
+  unless enabled.
+- Document the implemented managed-agent lifecycle: reviewed plan/apply, runtime
+  export and verification, rotation, retirement, and revocation; optional vault
+  writes when integration is enabled.
+- Add v1 access-request YAML import, capability checks, role starters, account
+  admin mapping, lifetime tracking, and connection hygiene helpers.
 - Add an inspect-only agent SQL example (for example read-only `SHOW` metadata)
   to the identity and security guide.
 - Block lifecycle actions in demo mode with an explicit message.

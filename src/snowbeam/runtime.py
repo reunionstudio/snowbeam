@@ -32,6 +32,11 @@ def export_bundle(fleet, identity: str) -> dict:
         raise ValueError(
             "This identity has no ready runtime handoff. Resolve its lifecycle status first."
         )
+    if state.get("status") == "awaiting_relay_confirmation":
+        raise ValueError(
+            "Confirm credential relay before exporting a runtime bundle. The operator must "
+            "save the credential first."
+        )
     reference = state.get("pending_ref") or state.get("credential_ref")
     bundle = {
         "version": 1,
@@ -41,6 +46,7 @@ def export_bundle(fleet, identity: str) -> dict:
         "auth": spec["auth"],
         "profile": {"name": spec["connection"], "settings": provisioner._profile(spec).settings},
         "credential": reference,
+        "credential_handoff": "vault" if reference else "human_relay",
         "credential_name": state.get("pending_name") or state.get("credential_name"),
         "fingerprint": state.get("pending_fingerprint") or state.get("public_key_fp"),
         "workload": state.get("workload"),
@@ -68,6 +74,7 @@ def load_bundle(path: Path) -> dict:
         "workload",
         "operation",
         "bundle_digest",
+        "credential_handoff",
     }
     if not isinstance(bundle, dict) or set(bundle) != fields or bundle["version"] != 1:
         raise ValueError("Unsupported runtime bundle.")
@@ -122,12 +129,16 @@ def load_bundle(path: Path) -> dict:
     ):
         raise ValueError("Runtime authentication differs from the exported method.")
     if bundle["auth"] != "WIF":
-        reference = validate_fields(bundle["credential"], REFERENCE_FIELDS)
-        vault_values(reference)
-        if reference.get("credential_kind") not in {None, bundle["auth"]}:
-            raise ValueError("Vault reference has a different authentication method.")
-        if "workload_identity_provider" in settings or "token_file_path" in settings:
-            raise ValueError("Vault bundles must resolve their credential at runtime.")
+        if bundle.get("credential_handoff") == "human_relay":
+            if bundle["credential"] is not None:
+                raise ValueError("Human-relay bundles must not include a vault credential.")
+        else:
+            reference = validate_fields(bundle["credential"], REFERENCE_FIELDS)
+            vault_values(reference)
+            if reference.get("credential_kind") not in {None, bundle["auth"]}:
+                raise ValueError("Vault reference has a different authentication method.")
+            if "workload_identity_provider" in settings or "token_file_path" in settings:
+                raise ValueError("Vault bundles must resolve their credential at runtime.")
     else:
         if bundle["credential"] is not None:
             raise ValueError("WIF must not include a vault credential.")
@@ -146,11 +157,14 @@ def session(bundle: dict):
         Path("runtime-config.toml"),
         bundle["profile"]["settings"],
     )
-    return (
-        workload_session(profile)
-        if bundle["auth"] == "WIF"
-        else credential_session(profile, Vault(bundle["credential"]).read())
-    )
+    if bundle["auth"] == "WIF":
+        return workload_session(profile)
+    if bundle.get("credential_handoff") == "human_relay":
+        raise ValueError(
+            "This bundle expects operator-supplied credential files. Use runtime test with "
+            "local token or key paths instead of runtime exec."
+        )
+    return credential_session(profile, Vault(bundle["credential"]).read())
 
 
 def test_bundle(bundle: dict, client: SnowClient) -> dict:

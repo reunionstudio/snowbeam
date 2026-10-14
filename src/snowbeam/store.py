@@ -562,6 +562,10 @@ class Store:
             "workload",
             "approved_policy_digest",
             "approved_role_digest",
+            "lifetime_end",
+            "requested_capabilities",
+            "capability_verification",
+            "relay_confirmed_at",
         }
         if set(state) - allowed:
             raise ValueError("Unknown lifecycle fields. Credentials cannot be stored in the cache.")

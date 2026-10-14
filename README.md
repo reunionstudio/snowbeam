@@ -10,20 +10,24 @@ accounts. Snowbeam is a local terminal app built first for
 
 Give each autonomous agent its own identity and only the access its job needs.
 Keep client accounts separate, inspect policy evidence, and manage individual
-credentials through reviewed plans. Snowflake enforces access; 1Password or
-Bitwarden holds managed tokens and private keys; your chosen runtime runs the
-agent. Snowbeam works independently of Airlock.
+credentials through reviewed plans. Snowflake enforces access; you save managed
+tokens and private keys in your own password manager; your chosen runtime runs
+the agent. Snowbeam works independently of Airlock.
 
 **Published alpha: `0.2.0a3`.** Source and versioned downloads are available through
 [GitHub releases](https://github.com/reunionstudio/snowbeam/releases).
 
-The working source (`0.2.0a5`) implements reviewed **plan → apply → vault** for
-managed agents: create, rotate, and revoke individual PATs or key pairs (plus
-workload-identity binding), with runtime export and verification. Use the
-[identity and security guide](docs/security.md) with Snowflake CLI and an
-unlocked 1Password or Bitwarden CLI. Automated tests mock Snowflake and vault;
-your accounts still need a deliberate trial. Cloud workload authentication on a
-real cloud runtime and Omarchy desktop validation remain pending. See
+The working source (`0.2.0a5`) implements reviewed **plan → apply → human relay**
+for managed agents: Snowbeam shows exactly what to save after apply, waits for
+explicit confirmation, then verifies sign-in with operator-supplied token or key
+files (no password-manager CLI in the default path). Optional **vault
+integration** (`snowbeam preferences vault-integration on`) restores automated
+1Password/Bitwarden writes for teams that opt in. Create, rotate, and revoke
+individual PATs or key pairs (plus workload-identity binding), with runtime
+export and verification. Use the [identity and security guide](docs/security.md)
+with Snowflake CLI. Automated tests mock Snowflake and vault adapters; your
+accounts still need a deliberate trial. Cloud workload authentication on a real
+cloud runtime and Omarchy desktop validation remain pending. See
 [0.2.0a5 release notes](docs/releases/0.2.0a5.md).
 
 Use the [local demo loop](CONTRIBUTING.md#fast-local-iteration) for UI work

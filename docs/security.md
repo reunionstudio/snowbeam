@@ -1,8 +1,13 @@
 # Connections, identities, and agent access
 
 Snowbeam keeps the connection catalog and intended setup. Snowflake enforces
-access. Your password manager holds PATs and private keys. A runtime runs the
-agent. These are separate responsibilities.
+access. You store PATs and private keys in your password manager. A runtime runs
+the agent. These are separate responsibilities.
+
+By default Snowbeam does **not** call 1Password or Bitwarden during provisioning.
+It relays the new credential to a human once, waits for explicit confirmation, and
+verifies sign-in with files you supply. Optional vault integration is off unless
+you enable it (see [Vault adapters (opt-in)](#vault-adapters-opt-in)).
 
 Use Snowbeam on the manager's machine to inspect and provision. Send each agent
 only its own runtime bundle. Do not distribute the consultant's full Snowflake
@@ -97,16 +102,14 @@ CREATE AUTHENTICATION POLICY SECURITY.POLICIES.AGENT_KEYPAIR_ONLY
 CREATE NETWORK POLICY DEVO_RUNNERS ALLOWED_IP_LIST = ('203.0.113.10/32');
 ```
 
-Record the approved setup. Use the 1Password account and vault identifiers from
-your own installation. Nothing in these two commands changes Snowflake:
+Record the approved setup. Nothing in these two commands changes Snowflake:
 
 ```sh
 snowbeam templates add acme-reporting \
   --organization ACME --account PROD --admin-connection acme-admin \
   --role REPORTING_AGENT --warehouse AGENT_WH \
   --authentication-policy SECURITY.POLICIES.AGENT_PAT_ONLY \
-  --network-policy REPORTING_RUNNERS --auth PAT --days-to-expiry 30 \
-  --provider onepassword --vault VAULT_ID --vault-account ACCOUNT_ID
+  --network-policy REPORTING_RUNNERS --auth PAT --days-to-expiry 30
 
 snowbeam identities add sam --template acme-reporting --user AGENT_SAM \
   --client Acme --owner Jane --purpose 'Daily reporting' --runtime runner-east
@@ -127,21 +130,42 @@ snowbeam identities apply sam --approve APPROVAL_DIGEST --json
 
 Planning performs metadata reads. The plan identifies the organization, account,
 admin identity, target user, role grants, policy contents, credential lifetime,
-vault destination, and steps. Applying repeats the preflight and rejects a changed
-plan. Each operation includes a server-side account/user guard in the same CLI
-session as its statement. Built-in administrative workload roles, broad
-allow-all network addresses, unknown PAT expiry limits, and authentication
-policies permitting another method block provisioning.
+and steps. Applying repeats the preflight and rejects a changed plan. Each
+operation includes a server-side account/user guard in the same CLI session as its
+statement. Built-in administrative workload roles, broad allow-all network
+addresses, unknown PAT expiry limits, and authentication policies permitting
+another method block provisioning.
 
 Provisioning creates a disabled user, grants the existing role, attaches and
-checks the policies, creates the individual credential, verifies the vault write,
-adds the standard connection, and enables the user. Its local status remains
-`awaiting_verification` until a runtime test succeeds. Default secondary roles
-are empty. No existing user is adopted or overwritten. Changing a template does
-not silently change a provisioned user; inspection reports drift, and changed
-account/user/authentication targets require a separate entry or deliberate recovery.
+checks the policies, and mints the individual credential in Snowflake. In the
+default **human relay** path Snowbeam returns a one-time `credential_relay` payload
+(account, user, role, token or private key, suggested item title). Save it in your
+password manager, then confirm:
 
-## Vault adapters
+```sh
+snowbeam identities confirm-relay sam
+snowbeam identities verify sam --runtime runner-east --token-file /path/to/token
+```
+
+Use `--private-key-file` and `--passphrase` for key-pair agents. Snowbeam does not
+persist or log the secret; supply the same material you saved when verifying.
+Status moves to `awaiting_verification` after confirm, then `active` after a
+successful verify. Default secondary roles are empty. No existing user is adopted
+or overwritten. Changing a template does not silently change a provisioned user;
+inspection reports drift, and changed account/user/authentication targets require
+a separate entry or deliberate recovery.
+
+## Vault adapters (opt-in)
+
+Vault CLI integration is disabled by default. Enable it only when you want
+Snowbeam to write new credentials through 1Password or Bitwarden:
+
+```sh
+snowbeam preferences vault-integration on
+```
+
+Re-save templates with vault fields after enabling. Verification still accepts
+operator-supplied `--token-file` / `--private-key-file` even when integration is on.
 
 Install and authorize the chosen provider's CLI: [1Password CLI](https://developer.1password.com/docs/cli/)
 or [Bitwarden CLI](https://bitwarden.com/help/cli/). Snowbeam does not log you in,
@@ -194,9 +218,11 @@ snowbeam runtime export sam --out sam-runtime.json
 
 Transfer it to the intended runtime through your normal deployment process. It
 contains one profile, the expected organization/account/user/role, and either a
-vault reference or workload binding. It contains no admin profile or credential
-values. The runtime still needs its own authorization to read that vault item,
-or its assigned cloud workload identity.
+workload binding, an optional vault reference (when integration is enabled), or a
+`human_relay` handoff with no embedded secret. It contains no admin profile or
+credential values. The runtime uses operator-supplied token or key files for
+human-relay bundles, its own vault access when a reference is present, or its
+assigned cloud workload identity.
 
 On that runtime, with Snowbeam and Snowflake CLI installed:
 

@@ -67,7 +67,30 @@ def add_commands(commands):
     verify = actions.add_parser("verify")
     verify.add_argument("name")
     verify.add_argument("--runtime", required=True, help="Declared runtime; run this command there")
+    verify.add_argument(
+        "--token-file", type=Path, help="Saved PAT file for human-relay verification"
+    )
+    verify.add_argument("--private-key-file", type=Path, help="Saved private key for verification")
+    verify.add_argument("--passphrase", help="Private key passphrase when using --private-key-file")
     verify.add_argument("--json", action="store_true")
+    relay = actions.add_parser(
+        "confirm-relay",
+        help="Confirm the operator saved the relayed credential before verification",
+    )
+    relay.add_argument("name")
+    relay.add_argument("--json", action="store_true")
+    capabilities = actions.add_parser(
+        "verify-capabilities",
+        help="Evidence run for requested capabilities (never auto-fixes)",
+    )
+    capabilities.add_argument("name")
+    capabilities.add_argument("--token-file", type=Path)
+    capabilities.add_argument("--private-key-file", type=Path)
+    capabilities.add_argument("--passphrase")
+    capabilities.add_argument("--json", action="store_true")
+    expiring = actions.add_parser("expiring", help="Managed identities nearing lifetime_end")
+    expiring.add_argument("--days", type=int, default=30)
+    expiring.add_argument("--json", action="store_true")
     receipt = actions.add_parser(
         "accept-test", help="Review and accept a trusted runtime's test report"
     )
@@ -187,8 +210,51 @@ def run(args, service):
         elif action == "apply":
             result = Provisioner(fleet).apply(args.name, args.action, args.approve)
         elif action == "verify":
-            result = Provisioner(fleet).verify(args.name, args.runtime)
+            result = Provisioner(fleet).verify(
+                args.name,
+                args.runtime,
+                token_file=getattr(args, "token_file", None),
+                private_key_file=getattr(args, "private_key_file", None),
+                passphrase=getattr(args, "passphrase", None),
+            )
+        elif action == "confirm-relay":
+            result = Provisioner(fleet).confirm_relay(args.name)
+        elif action == "verify-capabilities":
+            from .access_requests import AccessRequestPlanner
+
+            result = AccessRequestPlanner(fleet).verify_capabilities(
+                args.name,
+                token_file=getattr(args, "token_file", None),
+                private_key_file=getattr(args, "private_key_file", None),
+                passphrase=getattr(args, "passphrase", None),
+            )
+        elif action == "expiring":
+            from .access_requests import expiring_identities
+
+            result = expiring_identities(fleet, within_days=args.days)
+            if not getattr(args, "json", False):
+                print_table(
+                    f"Identities expiring within {args.days} days",
+                    ("Identity", "User", "Account", "Ends", "Owner"),
+                    [
+                        (
+                            r["identity"],
+                            r["user"],
+                            f"{r['organization']}/{r['account']}",
+                            r["lifetime_end"],
+                            r.get("owner") or "",
+                        )
+                        for r in result
+                    ],
+                )
+                return 0
     elif args.command == "credentials":
+        from .credential_relay import vault_integration_enabled
+
+        if not vault_integration_enabled(fleet.config.read()):
+            raise ValueError(
+                "Vault references are opt-in. Run: snowbeam preferences vault-integration on"
+            )
         if args.credential_action != "bind":
             raise ValueError("Use credentials bind to record an existing vault item reference.")
         spec = fleet.config.spec(args.name)

@@ -45,6 +45,7 @@ def parser() -> argparse.ArgumentParser:
     )
     commands = root.add_subparsers(dest="command")
     from .fleet_cli import add_commands
+    from .requests_cli import add_requests_commands
 
     add_commands(commands)
     tui = commands.add_parser("tui", help="Open the terminal app (default)")
@@ -116,6 +117,10 @@ def parser() -> argparse.ArgumentParser:
     )
     binding.add_argument("name")
     binding.add_argument("token", help="Token name; use an empty string to remove the association")
+    hygiene = actions.add_parser(
+        "hygiene", help="Read-only private-key path hygiene on this machine"
+    )
+    hygiene.add_argument("--json", action="store_true")
     desktop = commands.add_parser("desktop", help="Install the Linux/Omarchy app launcher")
     desktop.add_argument("action", choices=["install"])
     reminders = commands.add_parser(
@@ -131,6 +136,7 @@ def parser() -> argparse.ArgumentParser:
     policy.add_argument("name", nargs="?", help="Connection name")
     policy.add_argument("--minutes", type=int, help="1–1440 minutes; 0 disables background refresh")
     policy.add_argument("--json", action="store_true")
+    add_requests_commands(commands)
     return root
 
 
@@ -157,8 +163,12 @@ def run(args, service: Service) -> int:
         from .fleet_service import FleetService
 
         service.fleet = FleetService(service, args.fleet_config)
+    from .requests_cli import REQUEST_COMMANDS, run_requests
+
     if args.command in COMMANDS:
         return run_fleet(args, service)
+    if args.command in REQUEST_COMMANDS:
+        return run_requests(args, service)
     if args.command == "labels":
         key = args.target
         if args.kind == "account":
@@ -329,6 +339,18 @@ def run(args, service: Service) -> int:
             if not args.yes:
                 raise ValueError("Use --yes to confirm removal of this local connection profile.")
             service.config.remove(args.name)
+        elif action == "hygiene":
+            from .hygiene import connection_hygiene
+
+            result = connection_hygiene(service.config)
+            if args.json:
+                emit(result)
+            else:
+                for issue in result:
+                    print(safe_text(issue["message"]))
+                if not result:
+                    print("No private-key hygiene issues found on this machine.")
+            return 0
         elif action == "bind-token":
             service.store.bind_token(service.config.profile(args.name).key, args.token or None)
         if action != "list":

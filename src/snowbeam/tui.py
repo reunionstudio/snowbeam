@@ -1011,8 +1011,8 @@ class Snowbeam(App):
             return
         if self.service.demo:
             self.message(
-                "Managed agent lifecycle requires your Snowflake configuration and vault "
-                "CLIs. Quit demo mode and run snowbeam normally."
+                "Managed agent lifecycle requires your Snowflake configuration. Quit demo "
+                "mode and run snowbeam normally."
             )
             return
         if not row["template"]:

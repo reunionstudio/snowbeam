@@ -54,17 +54,26 @@ def _args(**kwargs):
     return SimpleNamespace(**defaults)
 
 
-def test_cli_plan_and_apply_json(lifecycle_cli, capsys):
+def test_cli_plan_and_apply_json(lifecycle_cli, monkeypatch, capsys):
     service, cloud = lifecycle_cli
+
+    from test_fleet import TEMPLATE as FULL_TEMPLATE
+
+    service.fleet.config.set_preference("vault_integration", True)
+    service.fleet.config.save("templates", "reporting", FULL_TEMPLATE, create=False)
+    monkeypatch.setattr("snowbeam.provision.vault_integration_enabled", lambda doc: True)
     assert run(_args(identity_action="plan"), service) == 0
     plan = json.loads(capsys.readouterr().out)
     assert plan["action"] == "provision"
     assert plan["approval"]
     assert not cloud.users
-    assert run(
-        _args(identity_action="apply", approve=plan["approval"]),
-        service,
-    ) == 0
+    assert (
+        run(
+            _args(identity_action="apply", approve=plan["approval"]),
+            service,
+        )
+        == 0
+    )
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "awaiting_verification"
     assert cloud.users["AGENT_SAM"]["disabled"] is False
@@ -87,9 +96,7 @@ def test_bitwarden_template_provisions_through_cli(lifecycle_cli, monkeypatch):
     service, cloud = lifecycle_cli
     fleet = service.fleet
     template = {
-        k: v
-        for k, v in TEMPLATE.items()
-        if k not in ("provider", "vault", "vault_account")
+        k: v for k, v in TEMPLATE.items() if k not in ("provider", "vault", "vault_account")
     }
     template.update(
         provider="bitwarden",

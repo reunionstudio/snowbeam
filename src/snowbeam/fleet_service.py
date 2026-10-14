@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .config import ConfigError, Profile
+from .credential_relay import vault_integration_enabled
 from .fleet import FleetConfig, digest
 from .security import Inspector, policy_fingerprint, provisioning_policy_issues
 from .snowflake import SnowError
@@ -74,6 +75,7 @@ class FleetService:
                 },
                 "credential": document["credentials"].get(key),
                 "lifecycle": state,
+                "lifetime_end": state.get("lifetime_end") or spec.get("lifetime_end"),
                 "security": evidence,
             }
             record["issues"] = self.record_issues(record)
@@ -309,8 +311,10 @@ class FleetService:
                         )
                 if spec["auth"] == "WIF":
                     return workload_session(expected)
-            if value["connection"] == profile.name and (
-                reference := document["credentials"].get(key)
+            if (
+                value["connection"] == profile.name
+                and vault_integration_enabled(document)
+                and (reference := document["credentials"].get(key))
             ):
                 if not interactive and reference["provider"] == "onepassword":
                     import os
