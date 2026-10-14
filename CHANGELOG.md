@@ -3,6 +3,17 @@
 Versions follow Python package versioning. Pre-release tags match package versions
 with a `v` prefix. This file records user-visible changes and known limitations.
 
+## 0.2.0a6 — Unreleased
+
+- Add read-only `snowbeam local scan` for Snowflake CLI credential hygiene on
+  this machine (configs, keys, permissions, shell exports, environment).
+- Add `snowbeam snow` to run the Snowflake CLI with `PRIVATE_KEY_PASSPHRASE`
+  only in the child process when a passphrase is stored in macOS Keychain (or
+  Linux `secret-tool` when available).
+- Add `snowbeam secrets set-passphrase`, `status`, and `remove` for OS-backed
+  connection passphrases; optional `snowbeam local keychain-wrapper` shell snippet.
+- Document MacBook setup in [docs/macbook-snow-credentials.md](docs/macbook-snow-credentials.md).
+
 ## 0.2.0a5 — Unreleased
 
 - Default managed-agent credential handoff is **human relay**: after an approved

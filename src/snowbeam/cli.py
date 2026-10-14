@@ -137,6 +137,11 @@ def parser() -> argparse.ArgumentParser:
     policy.add_argument("--minutes", type=int, help="1–1440 minutes; 0 disables background refresh")
     policy.add_argument("--json", action="store_true")
     add_requests_commands(commands)
+    from .local_cli import add_local_commands, add_secrets_commands, add_snow_command
+
+    add_local_commands(commands)
+    add_snow_command(commands)
+    add_secrets_commands(commands)
     return root
 
 
@@ -169,6 +174,24 @@ def run(args, service: Service) -> int:
         return run_fleet(args, service)
     if args.command in REQUEST_COMMANDS:
         return run_requests(args, service)
+    if args.command == "snow":
+        from .local_cli import run_snow_command
+
+        return run_snow_command(args, service.config, service.client.executable)
+    if args.command == "secrets":
+        from .local_cli import run_secrets
+
+        if not args.secrets_action:
+            raise ValueError("Choose a secrets action: set-passphrase, status, or remove.")
+        return run_secrets(args, service.config)
+    if args.command == "local":
+        from .local_cli import run_local_scan, run_local_wrapper
+
+        if args.local_action == "scan":
+            return run_local_scan(args, service.config)
+        if args.local_action == "keychain-wrapper":
+            return run_local_wrapper(args)
+        raise ValueError("Choose a local action: scan or keychain-wrapper.")
     if args.command == "labels":
         key = args.target
         if args.kind == "account":

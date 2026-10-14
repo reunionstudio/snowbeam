@@ -17,7 +17,7 @@ the agent. Snowbeam works independently of Airlock.
 **Published alpha: `0.2.0a3`.** Source and versioned downloads are available through
 [GitHub releases](https://github.com/reunionstudio/snowbeam/releases).
 
-The working source (`0.2.0a5`) implements reviewed **plan → apply → human relay**
+The working source (`0.2.0a6`) implements reviewed **plan → apply → human relay**
 for managed agents: Snowbeam shows exactly what to save after apply, waits for
 explicit confirmation, then verifies sign-in with operator-supplied token or key
 files (no password-manager CLI in the default path). Optional **vault
@@ -25,7 +25,10 @@ integration** (`snowbeam preferences vault-integration on`) restores automated
 1Password/Bitwarden writes for teams that opt in. Create, rotate, and revoke
 individual PATs or key pairs (plus workload-identity binding), with runtime
 export and verification. Use the [identity and security guide](docs/security.md)
-with Snowflake CLI. Automated tests mock Snowflake and vault adapters; your
+with Snowflake CLI. On a shared MacBook, use [local credential
+hygiene](docs/macbook-snow-credentials.md) (`local scan`, `secrets
+set-passphrase`, `snowbeam snow`). Automated tests mock Snowflake and vault
+adapters; your
 accounts still need a deliberate trial. Cloud workload authentication on a real
 cloud runtime and Omarchy desktop validation remain pending. See
 [0.2.0a5 release notes](docs/releases/0.2.0a5.md).
