@@ -1,8 +1,11 @@
 # Security policy
 
-Snowbeam is alpha software. Live Snowflake provisioning, real vault writes,
-workload authentication, and desktop integration still need end-to-end validation.
-Use a dedicated test account to evaluate managed credential changes.
+Snowbeam is alpha software. Managed agent lifecycle (reviewed plan/apply, vault
+writes, runtime handoff, rotation, and revocation) is implemented and covered by
+isolated automated tests. Validate any change in a dedicated Snowflake test
+account with your real `snow`, `op` or `bw`, and runtime before production use.
+Cloud workload authentication and desktop integration still need broader
+end-to-end validation.
 
 ## Report privately
 

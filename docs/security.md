@@ -79,6 +79,24 @@ CREATE NETWORK POLICY REPORTING_RUNNERS
   ALLOWED_IP_LIST = ('198.51.100.10/32');
 ```
 
+For a read-only inspect agent that should run `SHOW GRANTS`, `SHOW USERS`, and
+similar metadata commands without write access, keep the Snowflake role narrow and
+prefer key-pair authentication when the runtime is long-lived. Review the exact
+privileges your account allows for those commands; `MONITOR` on the account is
+often required for account-wide visibility:
+
+```sql
+CREATE ROLE DEVO_INSPECT;
+GRANT MONITOR ON ACCOUNT TO ROLE DEVO_INSPECT;
+GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE DEVO_INSPECT;
+
+CREATE AUTHENTICATION POLICY SECURITY.POLICIES.AGENT_KEYPAIR_ONLY
+  AUTHENTICATION_METHODS = ('KEYPAIR')
+  CLIENT_TYPES = ('DRIVERS', 'SNOWSQL');
+
+CREATE NETWORK POLICY DEVO_RUNNERS ALLOWED_IP_LIST = ('203.0.113.10/32');
+```
+
 Record the approved setup. Use the 1Password account and vault identifiers from
 your own installation. Nothing in these two commands changes Snowflake:
 

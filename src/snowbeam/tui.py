@@ -1009,6 +1009,12 @@ class Snowbeam(App):
         row = self.current_identity()
         if self.busy or not row:
             return
+        if self.service.demo:
+            self.message(
+                "Managed agent lifecycle requires your Snowflake configuration and vault "
+                "CLIs. Quit demo mode and run snowbeam normally."
+            )
+            return
         if not row["template"]:
             self.message("Lifecycle actions apply to agents created from a provisioning template.")
             return

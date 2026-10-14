@@ -15,13 +15,20 @@ Bitwarden holds managed tokens and private keys; your chosen runtime runs the
 agent. Snowbeam works independently of Airlock.
 
 **Published alpha: `0.2.0a3`.** Source and versioned downloads are available through
-[GitHub releases](https://github.com/reunionstudio/snowbeam/releases). Live Snowflake provisioning, vault writes, cloud
-workload authentication, and Omarchy desktop validation remain pending. See the
-[alpha release notes](https://github.com/reunionstudio/snowbeam/blob/main/docs/releases/0.2.0a3.md).
+[GitHub releases](https://github.com/reunionstudio/snowbeam/releases).
 
-The working source includes changes for the next release. Use the
-[local demo loop](CONTRIBUTING.md#fast-local-iteration) to try them without
-replacing your installed app.
+The working source (`0.2.0a5`) implements reviewed **plan → apply → vault** for
+managed agents: create, rotate, and revoke individual PATs or key pairs (plus
+workload-identity binding), with runtime export and verification. Use the
+[identity and security guide](docs/security.md) with Snowflake CLI and an
+unlocked 1Password or Bitwarden CLI. Automated tests mock Snowflake and vault;
+your accounts still need a deliberate trial. Cloud workload authentication on a
+real cloud runtime and Omarchy desktop validation remain pending. See
+[0.2.0a5 release notes](docs/releases/0.2.0a5.md).
+
+Use the [local demo loop](CONTRIBUTING.md#fast-local-iteration) for UI work
+without replacing your installed app. Demo mode does not run live lifecycle
+operations.
 
 ![Snowbeam identity inventory with synthetic data](https://reunionstudio.io/assets/snowbeam/identities.png)
 
@@ -149,7 +156,8 @@ describes configuration, storage paths, launchers, and reminders.
 - [Changelog](https://github.com/reunionstudio/snowbeam/blob/main/CHANGELOG.md) and [release process](https://github.com/reunionstudio/snowbeam/blob/main/docs/releasing.md).
 - [Contributing](https://github.com/reunionstudio/snowbeam/blob/main/CONTRIBUTING.md) and [reporting a security issue](https://github.com/reunionstudio/snowbeam/blob/main/SECURITY.md).
 
-The alpha has local tests and package-installation checks. GitHub Actions are
+The alpha has local tests (including mocked provisioning and vault flows) and
+package-installation checks. GitHub Actions are
 [setup templates](docs/github-actions/README.md) until workflow authorization is
 available; hosted Linux CI and live Omarchy testing remain pending.
 
