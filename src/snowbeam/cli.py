@@ -137,11 +137,14 @@ def parser() -> argparse.ArgumentParser:
     policy.add_argument("--minutes", type=int, help="1–1440 minutes; 0 disables background refresh")
     policy.add_argument("--json", action="store_true")
     add_requests_commands(commands)
+    from .control_plane_cli import add_access_commands, add_agent_commands
     from .local_cli import add_local_commands, add_secrets_commands, add_snow_command
 
     add_local_commands(commands)
     add_snow_command(commands)
     add_secrets_commands(commands)
+    add_access_commands(actions)
+    add_agent_commands(commands)
     return root
 
 
@@ -177,13 +180,19 @@ def run(args, service: Service) -> int:
     if args.command == "snow":
         from .local_cli import run_snow_command
 
-        return run_snow_command(args, service.config, service.client.executable)
+        return run_snow_command(
+            args, service.config, service.client.executable, service.store.directory
+        )
+    if args.command == "agents":
+        from .control_plane_cli import run_agents_command
+
+        return run_agents_command(args, service)
     if args.command == "secrets":
         from .local_cli import run_secrets
 
         if not args.secrets_action:
             raise ValueError("Choose a secrets action: set-passphrase, status, or remove.")
-        return run_secrets(args, service.config)
+        return run_secrets(args, service.config, service.store.directory)
     if args.command == "local":
         from .local_cli import run_local_scan, run_local_wrapper
 
@@ -341,6 +350,14 @@ def run(args, service: Service) -> int:
         return 2 if result.issues else 0
     if args.command == "connections":
         action = args.connection_action or "list"
+        if action in ("classify", "unclassify"):
+            from .control_plane_cli import run_access_command
+            from .run_context import resolve_run_context
+
+            context = resolve_run_context(service.store.directory)
+            if context.agent_context:
+                raise ValueError("Agent context cannot change connection classification.")
+            return run_access_command(args, service)
         if action in ("add", "edit", "clone"):
             source = getattr(args, "clone_from", None)
             settings = service.config.clone_settings(source) if source else {}
@@ -380,16 +397,26 @@ def run(args, service: Service) -> int:
             service.import_profiles()
             print(f"Connection {args.name!r}: {action} complete.")
             return 0
-        rows = service.store.connections()
+        from .control_plane_cli import filter_connection_rows
+        from .run_context import resolve_run_context
+
+        context = resolve_run_context(service.store.directory)
+        rows = filter_connection_rows(
+            service.store.connections(),
+            service.config,
+            service.store.directory,
+            agent_context=context.agent_context,
+        )
         if getattr(args, "json", False):
             emit(rows)
         else:
             print_table(
                 "Connections",
-                ("Name", "Account", "User", "Auth", "Default", "Health"),
+                ("Name", "Role", "Account", "User", "Auth", "Default", "Health"),
                 [
                     (
                         row["name"],
+                        row.get("access_role", "admin"),
                         row["settings"].get("account"),
                         row["settings"].get("user"),
                         row["settings"].get("authenticator", "snowflake"),

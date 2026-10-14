@@ -4,6 +4,11 @@ Snowbeam keeps the connection catalog and intended setup. Snowflake enforces
 access. You store PATs and private keys in your password manager. A runtime runs
 the agent. These are separate responsibilities.
 
+On a shared workstation, treat Snowbeam as an **inventory and control plane** for
+local `snow` access: classify connections as admin or agent, require interactive
+admin unlock before child-only passphrases, and register per-agent proofs. See
+[control plane](control-plane.md).
+
 By default Snowbeam does **not** call 1Password or Bitwarden during provisioning.
 It relays the new credential to a human once, waits for explicit confirmation, and
 verifies sign-in with files you supply. Optional vault integration is off unless
